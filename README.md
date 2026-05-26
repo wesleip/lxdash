@@ -2,7 +2,7 @@
 
 A web-based management panel for LXD containers. Provides a clean interface for operations that normally require CLI access to the host, plus a REST API that extends the native LXD API with authentication and audit logging.
 
-![Dashboard](https://raw.githubusercontent.com/wesleipp/lxdash/main/docs/screenshot-dashboard.png)
+<!-- ![Dashboard](https://raw.githubusercontent.com/wesleipp/lxdash/main/docs/screenshot-dashboard.png) -->
 
 ---
 
