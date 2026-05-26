@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+backend/.env
+backend/lxdash.db
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Data volume
+data/
+
+# Misc
+.DS_Store
+*.swp
+
+*.md
