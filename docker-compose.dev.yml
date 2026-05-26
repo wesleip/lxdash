@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/app
+      - lxdash-data:/app/data
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      APP_ENV: development
+      DATABASE_URL: sqlite:////app/data/lxdash.db
+      LXD_MOCK: "true"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  lxdash-data:
