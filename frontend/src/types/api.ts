@@ -10,13 +10,28 @@
 // Auth
 // ---------------------------------------------------------------------------
 
+export type UserRole = 'admin' | 'operator' | 'viewer'
+
 export interface User {
   id: number
   username: string
-  role: 'admin' | 'operator' | 'viewer'
+  role: UserRole
   email: string | null
   is_active: boolean
   created_at: string
+}
+
+export interface UserCreate {
+  username: string
+  email: string
+  password: string
+  role: UserRole
+}
+
+export interface UserUpdate {
+  email?: string
+  role?: UserRole
+  is_active?: boolean
 }
 
 export interface AuthToken {

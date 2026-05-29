@@ -24,6 +24,9 @@ import type {
   CreateNetworkRequest,
   StoragePool,
   LoginRequest,
+  User,
+  UserCreate,
+  UserUpdate,
 } from '@/types/api'
 
 // ---------------------------------------------------------------------------
@@ -281,6 +284,27 @@ export const storage = {
 
   delete: (name: string): Promise<void> =>
     del<void>(`/storage/${name}`),
+}
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+export const users = {
+  list: (signal?: AbortSignal): Promise<User[]> =>
+    get<User[]>('/users', signal),
+
+  create: (data: UserCreate): Promise<User> =>
+    post<User>('/users', data),
+
+  update: (id: number, data: UserUpdate): Promise<User> =>
+    patch<User>(`/users/${id}`, data),
+
+  resetPassword: (id: number, password: string): Promise<void> =>
+    post<void>(`/users/${id}/reset-password`, { password }),
+
+  delete: (id: number): Promise<void> =>
+    del<void>(`/users/${id}`),
 }
 
 // Re-export error class so callers can do `instanceof ApiError`

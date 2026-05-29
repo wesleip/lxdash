@@ -14,6 +14,7 @@ const Images = lazy(() => import('@/pages/Images'))
 const Networks = lazy(() => import('@/pages/Networks'))
 const Storage = lazy(() => import('@/pages/Storage'))
 const Settings = lazy(() => import('@/pages/Settings'))
+const Users = lazy(() => import('@/pages/Users'))
 
 function PageSpinner() {
   return (
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="networks" element={<Networks />} />
             <Route path="storage" element={<Storage />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="users" element={<Users />} />
           </Route>
 
           {/* Console is outside AppLayout (full-screen terminal) */}

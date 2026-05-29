@@ -24,7 +24,7 @@ import models.user  # noqa: F401
 # ---------------------------------------------------------------------------
 # Import routers
 # ---------------------------------------------------------------------------
-from routers import auth, console, containers, images, metrics, networks, storage
+from routers import auth, console, containers, images, metrics, networks, storage, users
 
 settings = get_settings()
 
@@ -143,6 +143,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ---------------------------------------------------------------------------
 
 app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(containers.router)
 app.include_router(images.router)
 app.include_router(networks.router)

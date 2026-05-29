@@ -9,6 +9,7 @@ import {
   LogOut,
   ChevronLeft,
   Server,
+  Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/ui'
@@ -19,6 +20,7 @@ interface NavItem {
   label: string
   icon: React.ComponentType<{ className?: string }>
   end?: boolean
+  adminOnly?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -27,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/images', label: 'Images', icon: Image },
   { to: '/networks', label: 'Networks', icon: Network },
   { to: '/storage', label: 'Storage', icon: Database },
+  { to: '/users', label: 'Users', icon: Users, adminOnly: true },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -42,20 +45,21 @@ export function Sidebar() {
       )}
     >
       {/* Logo + collapse toggle */}
-      <div className="flex items-center justify-between px-3 h-14 border-b border-sidebar-border shrink-0">
+      <div
+        className={cn(
+          'flex items-center h-14 border-b border-sidebar-border shrink-0 px-3',
+          sidebarOpen ? 'justify-between' : 'justify-center',
+        )}
+      >
         {sidebarOpen && (
           <div className="flex items-center gap-2 overflow-hidden">
             <Server className="h-5 w-5 text-primary shrink-0" />
             <span className="font-semibold text-sidebar-foreground truncate">LXDash</span>
           </div>
         )}
-        {!sidebarOpen && <Server className="h-5 w-5 text-primary mx-auto" />}
         <button
           onClick={toggleSidebar}
-          className={cn(
-            'rounded-md p-1 hover:bg-accent hover:text-accent-foreground transition-colors',
-            !sidebarOpen && 'mx-auto',
-          )}
+          className="rounded-md p-1 hover:bg-accent hover:text-accent-foreground transition-colors"
           aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
         >
           <ChevronLeft
@@ -77,7 +81,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto">
         <ul className="space-y-0.5 px-2">
-          {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+          {NAV_ITEMS.filter(({ adminOnly }) => !adminOnly || user?.role === 'admin').map(({ to, label, icon: Icon, end }) => (
             <li key={to}>
               <NavLink
                 to={to}
