@@ -1,0 +1,65 @@
+# =============================================================================
+# lxdash backend — Python tooling config
+# =============================================================================
+# All Python code lives under ./ (relative to this file). Run tools from here:
+#   cd backend
+#   ruff check .
+#   ruff format --check .
+#   pytest
+# =============================================================================
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["."]
+
+[tool.ruff.lint]
+# Tight but pragmatic baseline. Add more rule codes as we adopt them.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (undefined names, unused imports)
+    "I",    # isort (import sorting)
+    "B",    # flake8-bugbear (common bugs)
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade (modern syntax)
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line-too-long — formatter handles line breaks
+    "B008",   # function-call-in-default-argument — FastAPI uses this pattern
+    "RUF012", # mutable-class-default — used in Pydantic schemas intentionally
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "B011",   # assert is the whole point of a test
+    "SIM117", # nested with-statements are clearer in test fixtures
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+]
+asyncio_mode = "auto"
+filterwarnings = [
+    "error",
+    # passlib emits a noisy warning about __about__ on bcrypt 4.x; harmless.
+    "ignore::DeprecationWarning:passlib.*",
+]
+
+[tool.bandit]
+# Tests legitimately use asserts and reach into private attrs.
+exclude_dirs = ["tests", "migrations/versions"]
+skips = ["B101"]
