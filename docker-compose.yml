@@ -1,0 +1,45 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      # Pass the host's lxd group GID so the container can access the Unix socket.
+      # Run: getent group lxd | cut -d: -f3
+      args:
+        LXD_GID: "${LXD_GID:-998}"
+    volumes:
+      - lxdash-data:/app/data
+      # Mount the LXD Unix socket from the host
+      - /var/snap/lxd/common/lxd/unix.socket:/var/snap/lxd/common/lxd/unix.socket
+    env_file:
+      - ./backend/.env.production
+    environment:
+      APP_ENV: production
+      DATABASE_URL: "sqlite:////app/data/lxdash.db"
+    # Add the lxd GID as a supplementary group at runtime
+    group_add:
+      - "${LXD_GID:-998}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "80:80"
+      # Uncomment for HTTPS:
+      # - "443:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  lxdash-data:
+    driver: local
