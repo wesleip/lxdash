@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import structlog
 import uvicorn
@@ -11,15 +11,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from config import get_settings
-from database import Base, engine
-
 # ---------------------------------------------------------------------------
 # Import all models so that Alembic / create_all sees them
 # ---------------------------------------------------------------------------
-import models.audit_log  # noqa: F401
-import models.host  # noqa: F401
+import models.audit_log
+import models.host
 import models.user  # noqa: F401
+from config import get_settings
 
 # ---------------------------------------------------------------------------
 # Import routers
@@ -32,6 +30,7 @@ settings = get_settings()
 # ---------------------------------------------------------------------------
 # structlog configuration
 # ---------------------------------------------------------------------------
+
 
 def _configure_logging() -> None:
     """Set up structlog to emit structured JSON to stdout."""
@@ -87,6 +86,7 @@ logger = structlog.get_logger(__name__)
 # Lifespan
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Tables are created via Alembic (entrypoint.sh runs `alembic upgrade head`).
@@ -129,6 +129,7 @@ app.add_middleware(
 # Global exception handler — never leak stack traces
 # ---------------------------------------------------------------------------
 
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception("unhandled_exception", path=request.url.path, exc=str(exc))
@@ -155,6 +156,7 @@ app.include_router(metrics.router)
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health", tags=["health"], summary="Health check")
 async def health() -> dict:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 from sqlalchemy.orm import Session
@@ -14,13 +14,13 @@ logger = structlog.get_logger(__name__)
 def log_action(
     db: Session,
     *,
-    user_id: Optional[int],
+    user_id: int | None,
     action: str,
     resource_type: str,
-    resource_name: Optional[str] = None,
-    host_id: Optional[int] = None,
+    resource_name: str | None = None,
+    host_id: int | None = None,
     status: str = "success",
-    detail: Optional[Any] = None,
+    detail: Any | None = None,
 ) -> AuditLog:
     """Insert an append-only audit log entry and return it.
 
@@ -34,7 +34,7 @@ def log_action(
         status:        ``"success"`` or ``"failure"``.
         detail:        Arbitrary JSON-serialisable data (dict, str, …).
     """
-    serialised_detail: Optional[str] = None
+    serialised_detail: str | None = None
     if detail is not None:
         if isinstance(detail, str):
             serialised_detail = detail

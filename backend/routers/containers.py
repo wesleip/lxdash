@@ -1,21 +1,18 @@
 from __future__ import annotations
 
-from typing import List
-
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, Query, status
 
-from dependencies import CurrentUser, DBDep, LXDDep, get_lxd_client
+from dependencies import CurrentUser, DBDep, LXDDep
 from schemas.container import (
     ContainerActionRequest,
-    ContainerCreate,
-    ContainerResponse,
-    ContainerStats,
     ContainerCpuUsage,
+    ContainerCreate,
     ContainerMemoryUsage,
     ContainerNetworkAddress,
     ContainerNetworkInterface,
+    ContainerResponse,
+    ContainerStats,
 )
 from services.audit_service import log_action
 from services.lxd_client import LXDClientError
@@ -24,7 +21,7 @@ router = APIRouter(prefix="/containers", tags=["containers"])
 logger = structlog.get_logger(__name__)
 
 
-def _container_to_response(c) -> ContainerResponse:  # noqa: ANN001
+def _container_to_response(c) -> ContainerResponse:
     """Map a pylxd Container object to ContainerResponse."""
     return ContainerResponse(
         name=c.name,
@@ -44,11 +41,12 @@ def _container_to_response(c) -> ContainerResponse:  # noqa: ANN001
 # GET /containers
 # ---------------------------------------------------------------------------
 
-@router.get("", response_model=List[ContainerResponse])
+
+@router.get("", response_model=list[ContainerResponse])
 async def list_containers(
     lxd: LXDDep,
     current_user: CurrentUser,
-) -> List[ContainerResponse]:
+) -> list[ContainerResponse]:
     """Return all containers on the specified LXD host."""
     try:
         containers = await lxd.list_containers()
@@ -60,6 +58,7 @@ async def list_containers(
 # ---------------------------------------------------------------------------
 # GET /containers/{name}
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{name}", response_model=ContainerResponse)
 async def get_container(
@@ -90,8 +89,7 @@ async def get_container(
             net_ifaces: dict = {}
             for iface_name, iface_data in (state.network or {}).items():
                 addresses = [
-                    ContainerNetworkAddress(**addr)
-                    for addr in iface_data.get("addresses", [])
+                    ContainerNetworkAddress(**addr) for addr in iface_data.get("addresses", [])
                 ]
                 net_ifaces[iface_name] = ContainerNetworkInterface(
                     name=iface_name,
@@ -111,6 +109,7 @@ async def get_container(
 # ---------------------------------------------------------------------------
 # POST /containers
 # ---------------------------------------------------------------------------
+
 
 @router.post("", response_model=ContainerResponse, status_code=status.HTTP_201_CREATED)
 async def create_container(
@@ -168,6 +167,7 @@ async def create_container(
 # DELETE /containers/{name}
 # ---------------------------------------------------------------------------
 
+
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_container(
     name: str,
@@ -211,6 +211,7 @@ async def delete_container(
 # POST /containers/{name}/start
 # ---------------------------------------------------------------------------
 
+
 @router.post("/{name}/start", response_model=ContainerResponse)
 async def start_container(
     name: str,
@@ -224,17 +225,26 @@ async def start_container(
         container = await lxd.get_container(name)
     except LXDClientError as exc:
         log_action(
-            db, user_id=current_user.id, action="container.start",
-            resource_type="container", resource_name=name,
-            host_id=lxd.host_id, status="failure", detail=str(exc),
+            db,
+            user_id=current_user.id,
+            action="container.start",
+            resource_type="container",
+            resource_name=name,
+            host_id=lxd.host_id,
+            status="failure",
+            detail=str(exc),
         )
         db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     log_action(
-        db, user_id=current_user.id, action="container.start",
-        resource_type="container", resource_name=name,
-        host_id=lxd.host_id, status="success",
+        db,
+        user_id=current_user.id,
+        action="container.start",
+        resource_type="container",
+        resource_name=name,
+        host_id=lxd.host_id,
+        status="success",
     )
     db.commit()
     return _container_to_response(container)
@@ -243,6 +253,7 @@ async def start_container(
 # ---------------------------------------------------------------------------
 # POST /containers/{name}/stop
 # ---------------------------------------------------------------------------
+
 
 @router.post("/{name}/stop", response_model=ContainerResponse)
 async def stop_container(
@@ -257,17 +268,26 @@ async def stop_container(
         container = await lxd.get_container(name)
     except LXDClientError as exc:
         log_action(
-            db, user_id=current_user.id, action="container.stop",
-            resource_type="container", resource_name=name,
-            host_id=lxd.host_id, status="failure", detail=str(exc),
+            db,
+            user_id=current_user.id,
+            action="container.stop",
+            resource_type="container",
+            resource_name=name,
+            host_id=lxd.host_id,
+            status="failure",
+            detail=str(exc),
         )
         db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     log_action(
-        db, user_id=current_user.id, action="container.stop",
-        resource_type="container", resource_name=name,
-        host_id=lxd.host_id, status="success",
+        db,
+        user_id=current_user.id,
+        action="container.stop",
+        resource_type="container",
+        resource_name=name,
+        host_id=lxd.host_id,
+        status="success",
     )
     db.commit()
     return _container_to_response(container)
@@ -276,6 +296,7 @@ async def stop_container(
 # ---------------------------------------------------------------------------
 # POST /containers/{name}/restart
 # ---------------------------------------------------------------------------
+
 
 @router.post("/{name}/restart", response_model=ContainerResponse)
 async def restart_container(
@@ -290,17 +311,26 @@ async def restart_container(
         container = await lxd.get_container(name)
     except LXDClientError as exc:
         log_action(
-            db, user_id=current_user.id, action="container.restart",
-            resource_type="container", resource_name=name,
-            host_id=lxd.host_id, status="failure", detail=str(exc),
+            db,
+            user_id=current_user.id,
+            action="container.restart",
+            resource_type="container",
+            resource_name=name,
+            host_id=lxd.host_id,
+            status="failure",
+            detail=str(exc),
         )
         db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     log_action(
-        db, user_id=current_user.id, action="container.restart",
-        resource_type="container", resource_name=name,
-        host_id=lxd.host_id, status="success",
+        db,
+        user_id=current_user.id,
+        action="container.restart",
+        resource_type="container",
+        resource_name=name,
+        host_id=lxd.host_id,
+        status="success",
     )
     db.commit()
     return _container_to_response(container)

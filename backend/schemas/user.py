@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from models.user import UserRole
 
-
 # ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
+
 
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_\-]+$")
@@ -27,14 +26,15 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    role: Optional[UserRole] = None
-    is_active: Optional[bool] = None
+    email: EmailStr | None = None
+    role: UserRole | None = None
+    is_active: bool | None = None
 
 
 # ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------
+
 
 class UserResponse(BaseModel):
     id: int
@@ -50,6 +50,7 @@ class UserResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Auth / token schemas
 # ---------------------------------------------------------------------------
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -75,6 +76,7 @@ class TokenRefresh(BaseModel):
 
 class AccessToken(BaseModel):
     """Returned when a refresh produces a new access token only."""
+
     access_token: str
     token_type: str = "bearer"
     expires_in: int

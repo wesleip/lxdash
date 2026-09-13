@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated, Generator, Optional
+from collections.abc import Generator
+from typing import Annotated
 
 import structlog
 from fastapi import Depends, HTTPException, Query, status
@@ -26,6 +27,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 # DB session
 # ---------------------------------------------------------------------------
 
+
 def get_db() -> Generator[Session, None, None]:
     db: Session = SessionLocal()
     try:
@@ -40,6 +42,7 @@ DBDep = Annotated[Session, Depends(get_db)]
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
+
 
 def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
@@ -89,10 +92,11 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 # LXD client
 # ---------------------------------------------------------------------------
 
+
 async def get_lxd_client(
     db: DBDep,
     current_user: CurrentUser,
-    host_id: Annotated[Optional[int], Query(description="LXD host ID")] = None,
+    host_id: Annotated[int | None, Query(description="LXD host ID")] = None,
 ) -> LXDClient | MockLXDClient:
     """Return a connected LXDClient (or MockLXDClient when LXD_MOCK=true).
 
@@ -108,9 +112,7 @@ async def get_lxd_client(
             detail="Query parameter 'host_id' is required.",
         )
 
-    host: Host | None = (
-        db.query(Host).filter(Host.id == host_id, Host.is_active.is_(True)).first()
-    )
+    host: Host | None = db.query(Host).filter(Host.id == host_id, Host.is_active.is_(True)).first()
     if host is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

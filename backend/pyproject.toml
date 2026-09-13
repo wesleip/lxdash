@@ -28,6 +28,9 @@ select = [
 ]
 ignore = [
     "E501",   # line-too-long — formatter handles line breaks
+    "E402",   # module-level import not at top of file — PEP 236 forces
+              # `from __future__` to come before the docstring, which pycodestyle
+              # flags as a misplaced import. False positive for us.
     "B008",   # function-call-in-default-argument — FastAPI uses this pattern
     "RUF012", # mutable-class-default — used in Pydantic schemas intentionally
 ]

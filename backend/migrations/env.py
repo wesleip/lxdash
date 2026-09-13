@@ -1,4 +1,5 @@
 """Alembic environment — auto-detects all SQLAlchemy models."""
+
 from __future__ import annotations
 
 import os
@@ -16,13 +17,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # ---------------------------------------------------------------------------
 # Import app config and all models so that Base.metadata is fully populated.
 # ---------------------------------------------------------------------------
-from config import get_settings  # noqa: E402
-from database import Base  # noqa: E402
+import models.audit_log
+import models.host
 
 # Import every model module so Alembic sees the tables.
-import models.user  # noqa: F401, E402
-import models.host  # noqa: F401, E402
-import models.audit_log  # noqa: F401, E402
+import models.user  # noqa: F401
+from config import get_settings
+from database import Base
 
 settings = get_settings()
 
@@ -44,6 +45,7 @@ target_metadata = Base.metadata
 # Offline migrations (generate SQL without a live DB connection)
 # ---------------------------------------------------------------------------
 
+
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -60,6 +62,7 @@ def run_migrations_offline() -> None:
 # ---------------------------------------------------------------------------
 # Online migrations (connect to the DB and apply)
 # ---------------------------------------------------------------------------
+
 
 def run_migrations_online() -> None:
     connectable = engine_from_config(

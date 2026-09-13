@@ -5,17 +5,18 @@ Revises:
 Create Date: 2026-05-29 00:00:00.000000
 
 """
+
 from __future__ import annotations
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a1b2c3d4e5f6"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -76,7 +77,9 @@ def upgrade() -> None:
     op.create_index(op.f("ix_audit_logs_id"), "audit_logs", ["id"], unique=False)
     op.create_index(op.f("ix_audit_logs_user_id"), "audit_logs", ["user_id"], unique=False)
     op.create_index(op.f("ix_audit_logs_action"), "audit_logs", ["action"], unique=False)
-    op.create_index(op.f("ix_audit_logs_resource_type"), "audit_logs", ["resource_type"], unique=False)
+    op.create_index(
+        op.f("ix_audit_logs_resource_type"), "audit_logs", ["resource_type"], unique=False
+    )
     op.create_index(op.f("ix_audit_logs_host_id"), "audit_logs", ["host_id"], unique=False)
     op.create_index(op.f("ix_audit_logs_created_at"), "audit_logs", ["created_at"], unique=False)
 

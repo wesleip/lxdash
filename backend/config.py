@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import List
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,7 +36,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     # CORS                                                                 #
     # ------------------------------------------------------------------ #
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -60,7 +59,7 @@ class Settings(BaseSettings):
     DOCS_ENABLED: bool = True
 
     @model_validator(mode="after")
-    def _enforce_production_safety(self) -> "Settings":
+    def _enforce_production_safety(self) -> Settings:
         """Refuse to start with unsafe defaults when APP_ENV=production.
 
         Defence in depth: even if the operator forgets to set the env vars

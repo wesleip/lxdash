@@ -11,13 +11,13 @@ The endpoint streams until the client disconnects or an error occurs.
 
 import asyncio
 import json
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, status
 from sse_starlette.sse import EventSourceResponse
 
-from dependencies import CurrentUser, get_lxd_client, get_db
+from dependencies import CurrentUser
 from services.lxd_client import LXDClientError
 
 router = APIRouter(prefix="/containers", tags=["metrics"])
@@ -87,8 +87,6 @@ async def container_stats_sse(
     """
     # We can't use the LXDDep annotated dependency directly in an SSE endpoint
     # because the dependency needs request-scope; we resolve it here manually.
-    from fastapi import Request
-    from starlette.background import BackgroundTask
 
     # The actual dependency injection happens at the route level; here we
     # construct the client inline so the generator can be a plain async gen.

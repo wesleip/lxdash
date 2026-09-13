@@ -3,7 +3,6 @@ from __future__ import annotations
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
 
 from dependencies import CurrentUser, DBDep
 from models.user import User, UserRole
@@ -17,6 +16,7 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Guard: admin-only
 # ---------------------------------------------------------------------------
+
 
 def require_admin(current_user: CurrentUser) -> User:
     if current_user.role != UserRole.admin:
@@ -34,6 +34,7 @@ AdminUser = Depends(require_admin)
 # GET /users
 # ---------------------------------------------------------------------------
 
+
 @router.get("", response_model=list[UserResponse], summary="List all users")
 async def list_users(
     db: DBDep,
@@ -46,7 +47,10 @@ async def list_users(
 # POST /users
 # ---------------------------------------------------------------------------
 
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Create user")
+
+@router.post(
+    "", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Create user"
+)
 async def create_user(
     body: UserCreate,
     db: DBDep,
@@ -79,6 +83,7 @@ async def create_user(
 # ---------------------------------------------------------------------------
 # PATCH /users/{user_id}
 # ---------------------------------------------------------------------------
+
 
 @router.patch("/{user_id}", response_model=UserResponse, summary="Update user")
 async def update_user(
@@ -126,11 +131,17 @@ async def update_user(
 # POST /users/{user_id}/reset-password
 # ---------------------------------------------------------------------------
 
+
 class PasswordResetRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
 
 
-@router.post("/{user_id}/reset-password", status_code=status.HTTP_204_NO_CONTENT, response_model=None, summary="Reset user password")
+@router.post(
+    "/{user_id}/reset-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Reset user password",
+)
 async def reset_password(
     user_id: int,
     body: PasswordResetRequest,
@@ -150,7 +161,10 @@ async def reset_password(
 # DELETE /users/{user_id}
 # ---------------------------------------------------------------------------
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None, summary="Delete user")
+
+@router.delete(
+    "/{user_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None, summary="Delete user"
+)
 async def delete_user(
     user_id: int,
     db: DBDep,

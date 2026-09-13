@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from jose import JWTError, jwt
+from jose import jwt
 from passlib.context import CryptContext
 
 from config import get_settings
@@ -16,6 +16,7 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # ---------------------------------------------------------------------------
 # Password helpers
 # ---------------------------------------------------------------------------
+
 
 def hash_password(plain: str) -> str:
     """Return a bcrypt hash of *plain*."""
@@ -31,13 +32,14 @@ def verify_password(plain: str, hashed: str) -> bool:
 # Token helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_token(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     expires_delta: timedelta,
     token_type: str,
 ) -> str:
     payload = data.copy()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload.update(
         {
             "iat": now,
@@ -48,9 +50,9 @@ def _make_token(
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_access_token(subject: str, extra: Optional[Dict[str, Any]] = None) -> str:
+def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> str:
     """Create a short-lived JWT access token for *subject* (username or user id)."""
-    data: Dict[str, Any] = {"sub": subject}
+    data: dict[str, Any] = {"sub": subject}
     if extra:
         data.update(extra)
     return _make_token(
@@ -69,7 +71,7 @@ def create_refresh_token(subject: str) -> str:
     )
 
 
-def decode_token(token: str) -> Dict[str, Any]:
+def decode_token(token: str) -> dict[str, Any]:
     """Decode and verify a JWT.
 
     Raises jose.JWTError (or a subclass) on any validation failure — callers

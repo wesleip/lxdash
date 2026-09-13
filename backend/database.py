@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Generator
+from collections.abc import Generator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -25,7 +25,7 @@ engine = create_engine(
 
 
 @event.listens_for(engine, "connect")
-def _sqlite_pragmas(dbapi_connection, connection_record):  # noqa: ANN001
+def _sqlite_pragmas(dbapi_connection, connection_record):
     """Apply SQLite PRAGMAs on every new connection."""
     if settings.DATABASE_URL.startswith("sqlite"):
         cursor = dbapi_connection.cursor()

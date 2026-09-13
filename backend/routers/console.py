@@ -15,11 +15,9 @@ asyncio.Queue to shuttle bytes between the LXD thread and the WS coroutine.
 """
 
 import asyncio
-import json
-from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from jose import JWTError
 from sqlalchemy.orm import Session
 
@@ -37,7 +35,7 @@ logger = structlog.get_logger(__name__)
 _CLOSE_POLICY_VIOLATION = 1008  # WebSocket close code
 
 
-async def _authenticate_ws(token: str, db: Session) -> Optional[User]:
+async def _authenticate_ws(token: str, db: Session) -> User | None:
     """Validate a JWT access token and return the User, or None on failure."""
     try:
         payload = decode_token(token)
@@ -84,10 +82,8 @@ async def container_console(
     # Look up the host (reuse a fresh session for the lifetime of the WS).
     db = SessionLocal()
     try:
-        host: Optional[Host] = (
-            db.query(Host)
-            .filter(Host.id == host_id, Host.is_active.is_(True))
-            .first()
+        host: Host | None = (
+            db.query(Host).filter(Host.id == host_id, Host.is_active.is_(True)).first()
         )
         if host is None:
             await websocket.close(code=_CLOSE_POLICY_VIOLATION)
@@ -118,7 +114,7 @@ async def container_console(
         )
 
         # Queue to receive output from the pylxd exec thread.
-        out_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+        out_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         loop = asyncio.get_event_loop()
 
         def _run_console() -> None:
@@ -139,7 +135,7 @@ async def container_console(
                         out_queue.put_nowait, chunk
                     ),
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 loop.call_soon_threadsafe(out_queue.put_nowait, None)
                 logger.warning("console.exec_failed", container=name, error=str(exc))
             finally:

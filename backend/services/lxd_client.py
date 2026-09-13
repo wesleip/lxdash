@@ -10,10 +10,9 @@ IMPORTANT RULES (enforced here, nowhere else):
 """
 
 import asyncio
-import ssl
-import tempfile
 import os
-from typing import Any, Dict, List, Optional
+import tempfile
+from typing import Any
 
 import pylxd  # type: ignore[import]
 import structlog
@@ -34,7 +33,7 @@ class LXDClient:
         containers = await client.list_containers()
     """
 
-    def __init__(self, _client: pylxd.Client, host_id: Optional[int] = None) -> None:
+    def __init__(self, _client: pylxd.Client, host_id: int | None = None) -> None:
         self._client = _client
         self.host_id = host_id
 
@@ -46,8 +45,8 @@ class LXDClient:
     async def connect_socket(
         cls,
         socket_path: str,
-        host_id: Optional[int] = None,
-    ) -> "LXDClient":
+        host_id: int | None = None,
+    ) -> LXDClient:
         """Connect to a local LXD daemon via Unix socket."""
 
         def _connect() -> pylxd.Client:
@@ -67,9 +66,9 @@ class LXDClient:
         endpoint: str,
         cert_pem: str,
         key_pem: str,
-        server_cert_pem: Optional[str] = None,
-        host_id: Optional[int] = None,
-    ) -> "LXDClient":
+        server_cert_pem: str | None = None,
+        host_id: int | None = None,
+    ) -> LXDClient:
         """Connect to a remote LXD daemon via TLS."""
 
         # pylxd expects paths to cert files, not PEM strings — write to tmpfiles.
@@ -84,15 +83,13 @@ class LXDClient:
                 key_path = kf.name
 
             try:
-                kwargs: Dict[str, Any] = {
+                kwargs: dict[str, Any] = {
                     "endpoint": endpoint,
                     "cert": (cert_path, key_path),
                     "verify": False,
                 }
                 if server_cert_pem:
-                    with tempfile.NamedTemporaryFile(
-                        suffix=".crt", delete=False
-                    ) as scf:
+                    with tempfile.NamedTemporaryFile(suffix=".crt", delete=False) as scf:
                         scf.write(server_cert_pem.encode())
                         kwargs["verify"] = scf.name
                 return pylxd.Client(**kwargs)
@@ -112,7 +109,7 @@ class LXDClient:
     # Containers
     # ------------------------------------------------------------------
 
-    async def list_containers(self) -> List[pylxd.models.Container]:
+    async def list_containers(self) -> list[pylxd.models.Container]:
         """Return all containers (including VMs) on the host."""
         return await asyncio.to_thread(self._client.containers.all)
 
@@ -122,7 +119,9 @@ class LXDClient:
         except pylxd.exceptions.LXDAPIException as exc:
             raise LXDClientError(f"Container '{name}' not found: {exc}") from exc
 
-    async def create_container(self, config: Dict[str, Any], wait: bool = True) -> pylxd.models.Container:
+    async def create_container(
+        self, config: dict[str, Any], wait: bool = True
+    ) -> pylxd.models.Container:
         """Create a container from *config* dict.
 
         *config* must follow the LXD REST API shape, e.g.::
@@ -174,7 +173,7 @@ class LXDClient:
     # Images
     # ------------------------------------------------------------------
 
-    async def list_images(self) -> List[pylxd.models.Image]:
+    async def list_images(self) -> list[pylxd.models.Image]:
         return await asyncio.to_thread(self._client.images.all)
 
     async def get_image(self, fingerprint: str) -> pylxd.models.Image:
@@ -187,7 +186,7 @@ class LXDClient:
         self,
         server: str,
         alias: str,
-        local_alias: Optional[str] = None,
+        local_alias: str | None = None,
     ) -> pylxd.models.Image:
         """Pull an image from a remote simplestreams / LXD server."""
 
@@ -213,7 +212,7 @@ class LXDClient:
     # Networks
     # ------------------------------------------------------------------
 
-    async def list_networks(self) -> List[pylxd.models.Network]:
+    async def list_networks(self) -> list[pylxd.models.Network]:
         return await asyncio.to_thread(self._client.networks.all)
 
     async def get_network(self, name: str) -> pylxd.models.Network:
@@ -222,7 +221,7 @@ class LXDClient:
         except pylxd.exceptions.LXDAPIException as exc:
             raise LXDClientError(f"Network '{name}' not found: {exc}") from exc
 
-    async def create_network(self, config: Dict[str, Any]) -> pylxd.models.Network:
+    async def create_network(self, config: dict[str, Any]) -> pylxd.models.Network:
         try:
             return await asyncio.to_thread(self._client.networks.create, **config)
         except pylxd.exceptions.LXDAPIException as exc:
@@ -239,7 +238,7 @@ class LXDClient:
     # Storage pools
     # ------------------------------------------------------------------
 
-    async def list_storage_pools(self) -> List[pylxd.models.StoragePool]:
+    async def list_storage_pools(self) -> list[pylxd.models.StoragePool]:
         return await asyncio.to_thread(self._client.storage_pools.all)
 
     async def get_storage_pool(self, name: str) -> pylxd.models.StoragePool:
@@ -251,16 +250,14 @@ class LXDClient:
     async def create_storage_volume(
         self,
         pool_name: str,
-        volume_config: Dict[str, Any],
+        volume_config: dict[str, Any],
     ) -> Any:
         pool = await self.get_storage_pool(pool_name)
         try:
             return await asyncio.to_thread(pool.volumes.create, volume_config)
         except pylxd.exceptions.LXDAPIException as exc:
-            raise LXDClientError(
-                f"Failed to create volume in pool '{pool_name}': {exc}"
-            ) from exc
+            raise LXDClientError(f"Failed to create volume in pool '{pool_name}': {exc}") from exc
 
-    async def list_storage_volumes(self, pool_name: str) -> List[Any]:
+    async def list_storage_volumes(self, pool_name: str) -> list[Any]:
         pool = await self.get_storage_pool(pool_name)
         return await asyncio.to_thread(pool.volumes.all)

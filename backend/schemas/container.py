@@ -1,27 +1,27 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Sub-schemas
 # ---------------------------------------------------------------------------
 
+
 class ContainerNetworkAddress(BaseModel):
-    family: str        # "inet" | "inet6"
+    family: str  # "inet" | "inet6"
     address: str
     netmask: str
-    scope: str         # "global" | "link" | "local"
+    scope: str  # "global" | "link" | "local"
 
 
 class ContainerNetworkInterface(BaseModel):
     name: str
-    addresses: List[ContainerNetworkAddress] = []
+    addresses: list[ContainerNetworkAddress] = []
     mac_address: str = ""
     mtu: int = 1500
-    state: str = ""    # "up" | "down"
+    state: str = ""  # "up" | "down"
 
 
 class ContainerCpuUsage(BaseModel):
@@ -29,7 +29,7 @@ class ContainerCpuUsage(BaseModel):
 
 
 class ContainerMemoryUsage(BaseModel):
-    usage: int = 0     # bytes
+    usage: int = 0  # bytes
     usage_peak: int = 0
     swap_usage: int = 0
     swap_usage_peak: int = 0
@@ -38,26 +38,28 @@ class ContainerMemoryUsage(BaseModel):
 class ContainerStats(BaseModel):
     cpu: ContainerCpuUsage = ContainerCpuUsage()
     memory: ContainerMemoryUsage = ContainerMemoryUsage()
-    network: Dict[str, ContainerNetworkInterface] = {}
+    network: dict[str, ContainerNetworkInterface] = {}
 
 
 # ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
 
+
 class ContainerCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9\-]*$")
     image: str = Field(..., description="Image alias or fingerprint, e.g. 'ubuntu:22.04'")
     host_id: int = Field(..., description="ID of the Host record to create the container on")
-    profiles: List[str] = Field(default=["default"])
-    config: Dict[str, Any] = Field(default_factory=dict)
-    devices: Dict[str, Any] = Field(default_factory=dict)
+    profiles: list[str] = Field(default=["default"])
+    config: dict[str, Any] = Field(default_factory=dict)
+    devices: dict[str, Any] = Field(default_factory=dict)
     ephemeral: bool = False
     start_after_create: bool = True
 
 
 class ContainerActionRequest(BaseModel):
     """Optional body for start/stop/restart — allows passing a timeout."""
+
     timeout: int = Field(default=30, ge=1, le=300)
     force: bool = False
 
@@ -66,22 +68,23 @@ class ContainerActionRequest(BaseModel):
 # Response schemas
 # ---------------------------------------------------------------------------
 
+
 class ContainerStatus(BaseModel):
-    status: str           # "Running" | "Stopped" | "Frozen" | …
+    status: str  # "Running" | "Stopped" | "Frozen" | …
     status_code: int
-    pid: Optional[int] = None
+    pid: int | None = None
 
 
 class ContainerResponse(BaseModel):
     name: str
     status: str
     status_code: int
-    type: str             # "container" | "virtual-machine"
-    profiles: List[str] = []
-    config: Dict[str, Any] = {}
+    type: str  # "container" | "virtual-machine"
+    profiles: list[str] = []
+    config: dict[str, Any] = {}
     architecture: str = ""
-    created_at: Optional[str] = None
-    last_used_at: Optional[str] = None
-    location: str = ""    # cluster member name
+    created_at: str | None = None
+    last_used_at: str | None = None
+    location: str = ""  # cluster member name
     # Populated only when fetching a single container with ?stats=true
-    stats: Optional[ContainerStats] = None
+    stats: ContainerStats | None = None

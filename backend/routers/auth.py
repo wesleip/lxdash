@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from dependencies import get_db
 from models.user import User
-from schemas.user import AccessToken, LoginRequest, Token, TokenRefresh, TokenUser
+from schemas.user import AccessToken, Token, TokenRefresh, TokenUser
 from services.auth_service import (
     access_token_expires_in_seconds,
     create_access_token,
@@ -24,6 +24,7 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # POST /auth/login
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/login",
@@ -72,6 +73,7 @@ async def login(
 # ---------------------------------------------------------------------------
 # POST /auth/refresh
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/refresh",

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List
-
 import structlog
 from fastapi import APIRouter, HTTPException, status
 
@@ -14,7 +12,7 @@ router = APIRouter(prefix="/networks", tags=["networks"])
 logger = structlog.get_logger(__name__)
 
 
-def _network_to_response(net) -> NetworkResponse:  # noqa: ANN001
+def _network_to_response(net) -> NetworkResponse:
     return NetworkResponse(
         name=net.name,
         description=getattr(net, "description", ""),
@@ -31,11 +29,12 @@ def _network_to_response(net) -> NetworkResponse:  # noqa: ANN001
 # GET /networks
 # ---------------------------------------------------------------------------
 
-@router.get("", response_model=List[NetworkResponse])
+
+@router.get("", response_model=list[NetworkResponse])
 async def list_networks(
     lxd: LXDDep,
     current_user: CurrentUser,
-) -> List[NetworkResponse]:
+) -> list[NetworkResponse]:
     """List all networks on the LXD host."""
     try:
         networks = await lxd.list_networks()
@@ -47,6 +46,7 @@ async def list_networks(
 # ---------------------------------------------------------------------------
 # POST /networks
 # ---------------------------------------------------------------------------
+
 
 @router.post("", response_model=NetworkResponse, status_code=status.HTTP_201_CREATED)
 async def create_network(
@@ -94,6 +94,7 @@ async def create_network(
 # ---------------------------------------------------------------------------
 # DELETE /networks/{name}
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_network(

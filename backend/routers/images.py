@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List
-
 import structlog
 from fastapi import APIRouter, HTTPException, status
 
@@ -14,7 +12,7 @@ router = APIRouter(prefix="/images", tags=["images"])
 logger = structlog.get_logger(__name__)
 
 
-def _image_to_response(img) -> ImageResponse:  # noqa: ANN001
+def _image_to_response(img) -> ImageResponse:
     """Map a pylxd Image to ImageResponse."""
     aliases = [
         ImageAlias(name=a.get("name", ""), description=a.get("description", ""))
@@ -42,11 +40,12 @@ def _image_to_response(img) -> ImageResponse:  # noqa: ANN001
 # GET /images
 # ---------------------------------------------------------------------------
 
-@router.get("", response_model=List[ImageResponse])
+
+@router.get("", response_model=list[ImageResponse])
 async def list_images(
     lxd: LXDDep,
     current_user: CurrentUser,
-) -> List[ImageResponse]:
+) -> list[ImageResponse]:
     """List all images cached on the LXD host."""
     try:
         images = await lxd.list_images()
@@ -58,6 +57,7 @@ async def list_images(
 # ---------------------------------------------------------------------------
 # POST /images/import
 # ---------------------------------------------------------------------------
+
 
 @router.post("/import", response_model=ImageResponse, status_code=status.HTTP_201_CREATED)
 async def import_image(
@@ -104,6 +104,7 @@ async def import_image(
 # ---------------------------------------------------------------------------
 # DELETE /images/{fingerprint}
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/{fingerprint}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_image(

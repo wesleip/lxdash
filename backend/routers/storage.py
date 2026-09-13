@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, status
@@ -18,10 +18,11 @@ logger = structlog.get_logger(__name__)
 # Local schemas (storage doesn't warrant a separate schemas/storage.py yet)
 # ---------------------------------------------------------------------------
 
+
 class StorageVolumeCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     type: str = Field(default="custom", description="Volume type: custom | image | container | …")
-    config: Dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
     description: str = ""
     content_type: str = Field(default="filesystem", description="filesystem | block")
 
@@ -29,24 +30,24 @@ class StorageVolumeCreate(BaseModel):
 class StorageVolumeResponse(BaseModel):
     name: str
     type: str
-    config: Dict[str, Any] = {}
+    config: dict[str, Any] = {}
     description: str = ""
     content_type: str = ""
     location: str = ""
-    used_by: List[str] = []
+    used_by: list[str] = []
 
 
 class StoragePoolResponse(BaseModel):
     name: str
     driver: str
     description: str = ""
-    config: Dict[str, Any] = {}
+    config: dict[str, Any] = {}
     status: str = ""
-    locations: List[str] = []
-    used_by: List[str] = []
+    locations: list[str] = []
+    used_by: list[str] = []
 
 
-def _pool_to_response(pool) -> StoragePoolResponse:  # noqa: ANN001
+def _pool_to_response(pool) -> StoragePoolResponse:
     return StoragePoolResponse(
         name=pool.name,
         driver=pool.driver,
@@ -58,7 +59,7 @@ def _pool_to_response(pool) -> StoragePoolResponse:  # noqa: ANN001
     )
 
 
-def _volume_to_response(vol) -> StorageVolumeResponse:  # noqa: ANN001
+def _volume_to_response(vol) -> StorageVolumeResponse:
     return StorageVolumeResponse(
         name=vol.name,
         type=vol.type,
@@ -74,11 +75,12 @@ def _volume_to_response(vol) -> StorageVolumeResponse:  # noqa: ANN001
 # GET /storage
 # ---------------------------------------------------------------------------
 
-@router.get("", response_model=List[StoragePoolResponse])
+
+@router.get("", response_model=list[StoragePoolResponse])
 async def list_storage_pools(
     lxd: LXDDep,
     current_user: CurrentUser,
-) -> List[StoragePoolResponse]:
+) -> list[StoragePoolResponse]:
     """List all storage pools on the LXD host."""
     try:
         pools = await lxd.list_storage_pools()
@@ -91,12 +93,13 @@ async def list_storage_pools(
 # GET /storage/{pool}/volumes
 # ---------------------------------------------------------------------------
 
-@router.get("/{pool}/volumes", response_model=List[StorageVolumeResponse])
+
+@router.get("/{pool}/volumes", response_model=list[StorageVolumeResponse])
 async def list_volumes(
     pool: str,
     lxd: LXDDep,
     current_user: CurrentUser,
-) -> List[StorageVolumeResponse]:
+) -> list[StorageVolumeResponse]:
     """List all volumes in a storage pool."""
     try:
         volumes = await lxd.list_storage_volumes(pool)
@@ -108,6 +111,7 @@ async def list_volumes(
 # ---------------------------------------------------------------------------
 # POST /storage/{pool}/volumes
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/{pool}/volumes",

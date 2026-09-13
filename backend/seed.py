@@ -9,10 +9,10 @@ this script without arguments must never produce a user with a weak,
 guessable password. The entrypoint.sh honors the ADMIN_PASSWORD env var;
 this CLI is the manual escape hatch.
 """
+
 from __future__ import annotations
 
 import argparse
-import sys
 
 from database import SessionLocal
 from models.user import User, UserRole
@@ -49,7 +49,9 @@ if __name__ == "__main__":
         required=True,
         help="Admin password (required — no default, refuses to run without it)",
     )
-    parser.add_argument("--email", default="admin@lxdash.local", help="Admin email (default: admin@lxdash.local)")
+    parser.add_argument(
+        "--email", default="admin@lxdash.local", help="Admin email (default: admin@lxdash.local)"
+    )
     args = parser.parse_args()
 
     seed(args.username, args.password, args.email)
