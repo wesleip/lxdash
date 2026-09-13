@@ -99,14 +99,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 # Application factory
 # ---------------------------------------------------------------------------
 
+_docs_enabled = settings.DOCS_ENABLED
 app = FastAPI(
     title="lxdash API",
     description="REST + WebSocket API for managing LXD containers.",
     version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
     # Never expose internal detail in default 422/500 responses
-    openapi_url="/openapi.json",
+    openapi_url="/openapi.json" if _docs_enabled else None,
     lifespan=lifespan,
 )
 
