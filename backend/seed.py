@@ -1,8 +1,13 @@
 """Create the initial admin user if it doesn't exist yet.
 
 Usage:
-    python seed.py
-    python seed.py --username admin --password secret --email admin@example.com
+    python seed.py --password <strong-password>
+    python seed.py --username admin --password <strong-password> --email admin@example.com
+
+The --password flag is required — there is no default, on purpose. Running
+this script without arguments must never produce a user with a weak,
+guessable password. The entrypoint.sh honors the ADMIN_PASSWORD env var;
+this CLI is the manual escape hatch.
 """
 from __future__ import annotations
 
@@ -38,9 +43,13 @@ def seed(username: str, password: str, email: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Seed initial admin user")
-    parser.add_argument("--username", default="admin")
-    parser.add_argument("--password", default="admin")
-    parser.add_argument("--email", default="admin@lxdash.local")
+    parser.add_argument("--username", default="admin", help="Admin username (default: admin)")
+    parser.add_argument(
+        "--password",
+        required=True,
+        help="Admin password (required — no default, refuses to run without it)",
+    )
+    parser.add_argument("--email", default="admin@lxdash.local", help="Admin email (default: admin@lxdash.local)")
     args = parser.parse_args()
 
     seed(args.username, args.password, args.email)
