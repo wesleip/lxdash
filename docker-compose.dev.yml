@@ -14,6 +14,14 @@ services:
       APP_ENV: development
       DATABASE_URL: sqlite:////app/data/lxdash.db
       LXD_MOCK: "true"
+    # Inherit the same hardening baseline as production where the dev mode
+    # allows it. read_only and tmpfs are intentionally NOT set — uvicorn
+    # --reload needs to write __pycache__/ on each restart.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
 
   frontend:
     build:
@@ -28,6 +36,9 @@ services:
       BACKEND_URL: http://backend:8000
     depends_on:
       - backend
+    security_opt:
+      - no-new-privileges:true
+    init: true
 
 volumes:
   lxdash-data:
