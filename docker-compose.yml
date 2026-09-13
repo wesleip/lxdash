@@ -19,25 +19,72 @@ services:
     # Add the lxd GID as a supplementary group at runtime
     group_add:
       - "${LXD_GID:-998}"
-    restart: unless-stopped
+    # ---------------------------------------------------------------------------
+    # Security hardening
+    # ---------------------------------------------------------------------------
+    # Refuse privilege escalation through SUID/SGID binaries inside the container.
+    security_opt:
+      - no-new-privileges:true
+    # Drop every Linux capability; backend doesn't need any (talks to the
+    # LXD socket via group membership, exposes HTTP).
+    cap_drop:
+      - ALL
+    # Root filesystem is read-only; only the named volume /app/data is
+    # writable (SQLite DB) plus tmpfs /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+    # Resource limits keep a compromised process from exhausting the host.
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 256
+    # tini as PID 1 — reaps zombies and forwards signals correctly to uvicorn.
+    init: true
+    # Container-level healthcheck (in addition to the HEALTHCHECK in the
+    # Dockerfile, which wins when both are present).
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 30s
       timeout: 5s
-      start_period: 10s
+      start_period: 15s
       retries: 3
+    restart: unless-stopped
 
   nginx:
     build:
       context: .
       dockerfile: nginx/Dockerfile
     ports:
-      - "80:80"
+      # Host 80 -> container 8080 (unprivileged; container runs as UID 101).
+      - "80:8080"
       # Uncomment for HTTPS:
-      # - "443:443"
+      # - "443:8443"
     depends_on:
       backend:
         condition: service_healthy
+    # ---------------------------------------------------------------------------
+    # Security hardening
+    # ---------------------------------------------------------------------------
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Root FS read-only; nginx writes to runtime dirs via tmpfs.
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=64M
+      - /var/run:size=4M
+      - /tmp:size=32M,mode=1777
+    mem_limit: 256m
+    cpus: "0.5"
+    pids_limit: 128
+    init: true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
     restart: unless-stopped
 
 volumes:
