@@ -85,7 +85,7 @@ async def list_storage_pools(
     try:
         pools = await lxd.list_storage_pools()
     except LXDClientError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return [_pool_to_response(p) for p in pools]
 
 
@@ -104,7 +104,7 @@ async def list_volumes(
     try:
         volumes = await lxd.list_storage_volumes(pool)
     except LXDClientError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return [_volume_to_response(v) for v in volumes]
 
 
@@ -147,7 +147,7 @@ async def create_volume(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,

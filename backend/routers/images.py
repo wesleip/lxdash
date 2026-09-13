@@ -50,7 +50,7 @@ async def list_images(
     try:
         images = await lxd.list_images()
     except LXDClientError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return [_image_to_response(img) for img in images]
 
 
@@ -85,7 +85,7 @@ async def import_image(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,
@@ -128,7 +128,7 @@ async def delete_image(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,

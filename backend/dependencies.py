@@ -62,7 +62,8 @@ def get_current_user(
     try:
         payload = decode_token(token)
     except JWTError:
-        raise credentials_exc
+        # Don't leak JWT decode errors to the client.
+        raise credentials_exc from None
 
     token_type: str = payload.get("type", "")
     if token_type != "access":
@@ -140,7 +141,7 @@ async def get_lxd_client(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to the LXD host.",
-        )
+        ) from exc
 
 
 LXDDep = Annotated[LXDClient | MockLXDClient, Depends(get_lxd_client)]

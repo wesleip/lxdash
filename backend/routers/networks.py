@@ -39,7 +39,7 @@ async def list_networks(
     try:
         networks = await lxd.list_networks()
     except LXDClientError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return [_network_to_response(n) for n in networks]
 
 
@@ -76,7 +76,7 @@ async def create_network(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,
@@ -118,7 +118,7 @@ async def delete_network(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,

@@ -94,7 +94,8 @@ async def refresh_token(
     try:
         payload = decode_token(body.refresh_token)
     except JWTError:
-        raise credentials_exc
+        # Don't leak JWT decode errors to the client.
+        raise credentials_exc from None
 
     if payload.get("type") != "refresh":
         raise credentials_exc

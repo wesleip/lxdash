@@ -124,7 +124,7 @@ async def container_console(
                 # pylxd execute with get_websocket=True returns an Operation
                 # whose websocket can be read. For a real PTY we use
                 # container.execute() in interactive mode.
-                result = container.execute(
+                container.execute(
                     ["/bin/sh"],
                     environment={"TERM": "xterm-256color"},
                     stdin_payload=b"",

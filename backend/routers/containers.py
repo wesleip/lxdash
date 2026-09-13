@@ -51,7 +51,7 @@ async def list_containers(
     try:
         containers = await lxd.list_containers()
     except LXDClientError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return [_container_to_response(c) for c in containers]
 
 
@@ -71,7 +71,7 @@ async def get_container(
     try:
         container = await lxd.get_container(name)
     except LXDClientError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     response = _container_to_response(container)
 
@@ -147,7 +147,7 @@ async def create_container(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,
@@ -193,7 +193,7 @@ async def delete_container(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,
@@ -235,7 +235,7 @@ async def start_container(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,
@@ -278,7 +278,7 @@ async def stop_container(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,
@@ -321,7 +321,7 @@ async def restart_container(
             detail=str(exc),
         )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     log_action(
         db,
