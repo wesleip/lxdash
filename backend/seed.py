@@ -9,14 +9,12 @@ from __future__ import annotations
 import argparse
 import sys
 
-from database import Base, SessionLocal, engine
+from database import SessionLocal
 from models.user import User, UserRole
 from services.auth_service import hash_password
 
 
 def seed(username: str, password: str, email: str) -> None:
-    Base.metadata.create_all(bind=engine)
-
     db = SessionLocal()
     try:
         existing = db.query(User).filter(User.username == username).first()

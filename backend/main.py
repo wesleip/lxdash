@@ -89,9 +89,8 @@ logger = structlog.get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Create database tables on startup (dev/test convenience)."""
+    # Tables are created via Alembic (entrypoint.sh runs `alembic upgrade head`).
     logger.info("startup", env=settings.APP_ENV)
-    Base.metadata.create_all(bind=engine)
     yield
     logger.info("shutdown")
 
