@@ -41,8 +41,19 @@ class Settings(BaseSettings):
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _parse_cors(cls, v: object) -> object:
-        # Accept both "url1,url2" (CSV from .env) and ["url1","url2"] (JSON array)
-        if isinstance(v, str) and not v.startswith("["):
+        # Accept three shapes from the environment:
+        #   - "url1,url2,url3"  (CSV, common in .env files)
+        #   - '["url1","url2"]' (JSON array, common in compose env)
+        #   - already a list (programmatic construction)
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                import json
+
+                loaded = json.loads(stripped)
+                if not isinstance(loaded, list):
+                    raise ValueError("CORS_ORIGINS JSON value must be an array")
+                return loaded
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
 
