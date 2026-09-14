@@ -1,8 +1,14 @@
 # LXDash
 
+[![backend CI](https://github.com/wesleipp/lxdash/actions/workflows/backend.yml/badge.svg)](https://github.com/wesleipp/lxdash/actions/workflows/backend.yml)
+[![frontend CI](https://github.com/wesleipp/lxdash/actions/workflows/frontend.yml/badge.svg)](https://github.com/wesleipp/lxdash/actions/workflows/frontend.yml)
+
 A web-based management panel for LXD containers. Provides a clean interface for operations that normally require CLI access to the host, plus a REST API that extends the native LXD API with authentication and audit logging.
 
 <!-- ![Dashboard](https://raw.githubusercontent.com/wesleipp/lxdash/main/docs/screenshot-dashboard.png) -->
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and the
+required CI checks before merging to `main`.
 
 ---
 
