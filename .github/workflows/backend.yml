@@ -90,6 +90,9 @@ jobs:
         uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: backend/Dockerfile
+          # Tell hadolint to read .hadolint.yaml (where we ignore DL3008).
+          # v3.x does not auto-load it from the workspace root.
+          config: .hadolint.yaml
           failure-threshold: warning
 
   # ---------------------------------------------------------------------------
@@ -126,9 +129,16 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # 5/5  Image vulnerability scan: build + trivy + SARIF
+  #
+  # depends on every fast check (ruff, bandit, hadolint, pytest) so that a
+  # failure in any of them skips the slowest job. Free-plan quota saver:
+  # trivy pulls a base image, builds the backend, and scans \xE2\x80\x94 it's the
+  # most expensive step in the workflow. Running it after a guaranteed
+  # failure would waste minutes for no information.
   # ---------------------------------------------------------------------------
   trivy:
     name: trivy (image vulnerability scan)
+    needs: [ruff, bandit, hadolint, pytest]
     runs-on: ubuntu-latest
     permissions:
       contents: read
