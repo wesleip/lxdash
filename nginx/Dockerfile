@@ -48,11 +48,15 @@ RUN ln -sf /dev/stdout /var/log/nginx/access.log \
 RUN touch /var/run/nginx.pid \
     && chown nginx:nginx /var/run/nginx.pid
 
-# Master + workers all run as UID 101. With 'listen 8080' this process does
-# not need CAP_NET_BIND_SERVICE.
-USER nginx
+# Master + workers all run as UID 101 (the numeric form satisfies
+# hadolint DL3066 — user names are not always resolvable by the host
+# kernel's NSS). With 'listen 8080' this process does not need
+# CAP_NET_BIND_SERVICE.
+USER 101
 
 EXPOSE 8080
 
+# JSON exec form (satisfies hadolint DL3025) so CMD arguments are not
+# re-parsed by a shell.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget -qO- http://localhost:8080/api/health || exit 1
+    CMD ["wget", "-qO-", "http://localhost:8080/api/health"]

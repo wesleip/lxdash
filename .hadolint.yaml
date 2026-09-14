@@ -1,0 +1,16 @@
+# hadolint configuration — https://github.com/hadolint/hadolint
+#
+# DL3008 (warning): "Pin versions in apt-get install". We deliberately
+# don't pin gcc/libffi-dev to specific Debian package versions because:
+#   - the base image python:3.12-slim is already a frozen snapshot,
+#   - pinning build-time tools adds maintenance burden and breakage when
+#     the underlying Debian release rotates versions, and
+#   - the security risk from a transient dev-time tool is minimal
+#     (these packages are not in the runtime image; the multi-stage
+#     build discards them).
+#
+# If the runtime base image ever drifts to a Debian release that no
+# longer ships the unpinned packages, re-evaluate.
+
+ignored:
+  - DL3008
