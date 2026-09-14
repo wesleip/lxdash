@@ -1,0 +1,113 @@
+# Backend CI — runs on changes under backend/ and on PRs to main.
+#
+# Five parallel jobs, all required to pass before the PR can merge:
+#   1. ruff (lint + format)
+#   2. bandit (security scan)
+#   3. hadolint (Dockerfile lint)
+#   4. pytest (unit tests)
+#   5. trivy (Docker image vulnerability scan, SARIF -> Security tab)
+#
+# Branch protection rules are documented in CONTRIBUTING.md.
+
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "backend/Dockerfile*"
+      - "backend/requirements*.txt"
+      - "pyproject.toml"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "backend/Dockerfile*"
+      - "backend/requirements*.txt"
+      - "pyproject.toml"
+      - ".github/workflows/backend.yml"
+
+concurrency:
+  group: backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ruff:
+    name: ruff (lint + format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.7.4
+      - run: ruff check backend/
+      - run: ruff format --check backend/
+
+  bandit:
+    name: bandit (security scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install bandit==1.7.10
+      # -ll = medium+ severity. B101 (assert) is excluded in pyproject.toml.
+      - run: bandit -r backend/ -ll
+
+  hadolint:
+    name: hadolint (Dockerfile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3
+        with:
+          dockerfile: backend/Dockerfile
+          failure-threshold: warning
+
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements*.txt', 'backend/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - run: cd backend && pytest --tb=short
+
+  trivy:
+    name: trivy (image vulnerability scan)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t lxdash-backend:ci -f backend/Dockerfile backend/
+      - name: Trivy scan (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: lxdash-backend:ci
+          format: sarif
+          output: trivy-backend.sarif
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-backend-sarif
+          path: trivy-backend.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-backend.sarif
