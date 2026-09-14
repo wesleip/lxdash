@@ -1,13 +1,9 @@
-# Frontend CI — runs on changes under frontend/ and nginx/, and on PRs to main.
+# Frontend CI — single workflow, named steps.
+# 5 jobs run in parallel; every step has a `name:` so the Actions log
+# shows clear sections.
 #
-# Five parallel jobs, all required to pass before the PR can merge:
-#   1. eslint (static analysis with flat config)
-#   2. tsc --noEmit (type check)
-#   3. vitest (unit tests)
-#   4. hadolint (nginx Dockerfile)
-#   5. trivy (nginx image vulnerability scan, SARIF -> Security tab)
-#
-# Branch protection rules are documented in CONTRIBUTING.md.
+# Branch protection: all five job names below must be marked required
+# in repo settings. See CONTRIBUTING.md.
 
 name: frontend
 
@@ -29,55 +25,94 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 1/5  Static analysis: eslint
+  # ---------------------------------------------------------------------------
   eslint:
     name: eslint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
-      - run: cd frontend && npm ci
-      - run: cd frontend && npm run lint
 
+      - name: Install dependencies (npm ci, from lockfile)
+        run: cd frontend && npm ci
+
+      - name: Run eslint via npm run lint
+        run: cd frontend && npm run lint
+
+  # ---------------------------------------------------------------------------
+  # 2/5  Static analysis: tsc --noEmit (type check)
+  # ---------------------------------------------------------------------------
   type-check:
     name: tsc --noEmit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
-      - run: cd frontend && npm ci
-      - run: cd frontend && npm run type-check
 
+      - name: Install dependencies (npm ci, from lockfile)
+        run: cd frontend && npm ci
+
+      - name: Run tsc --noEmit (no JS emitted, type errors only)
+        run: cd frontend && npm run type-check
+
+  # ---------------------------------------------------------------------------
+  # 3/5  Tests: vitest
+  # ---------------------------------------------------------------------------
   vitest:
     name: vitest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
-      - run: cd frontend && npm ci
-      - run: cd frontend && npm test
 
+      - name: Install dependencies (npm ci, from lockfile)
+        run: cd frontend && npm ci
+
+      - name: Run vitest (single-shot)
+        run: cd frontend && npm test
+
+  # ---------------------------------------------------------------------------
+  # 4/5  Dockerfile lint: hadolint on nginx/Dockerfile
+  # ---------------------------------------------------------------------------
   hadolint:
-    name: hadolint (nginx Dockerfile)
+    name: hadolint (Dockerfile)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: hadolint/hadolint-action@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lint nginx/Dockerfile with hadolint
+        uses: hadolint/hadolint-action@v3
         with:
           dockerfile: nginx/Dockerfile
           failure-threshold: warning
 
+  # ---------------------------------------------------------------------------
+  # 5/5  Image vulnerability scan: build nginx + trivy + SARIF
+  # ---------------------------------------------------------------------------
   trivy:
     name: trivy (image vulnerability scan)
     runs-on: ubuntu-latest
@@ -85,10 +120,13 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Build nginx image (embeds the frontend)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build nginx image (embeds the frontend bundle)
         run: docker build -t lxdash-nginx:ci -f nginx/Dockerfile .
-      - name: Trivy scan (SARIF)
+
+      - name: Trivy scan (CRITICAL + HIGH, fail the run)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: lxdash-nginx:ci
@@ -96,12 +134,16 @@ jobs:
           output: trivy-nginx.sarif
           severity: "CRITICAL,HIGH"
           exit-code: "1"
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload SARIF as workflow artefact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-nginx-sarif
           path: trivy-nginx.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+
+      - name: Upload SARIF to the Security tab
         if: always()
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-nginx.sarif
