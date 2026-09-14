@@ -139,7 +139,7 @@ export default function Networks() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="net-ipv6">IPv6 address (CIDR or "none")</Label>
+                  <Label htmlFor="net-ipv6">IPv6 address (CIDR or &quot;none&quot;)</Label>
                   <Input
                     id="net-ipv6"
                     placeholder="none"
