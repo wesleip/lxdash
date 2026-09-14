@@ -105,7 +105,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Lint nginx/Dockerfile with hadolint
-        uses: hadolint/hadolint-action@v3
+        uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: nginx/Dockerfile
           failure-threshold: warning
