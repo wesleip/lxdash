@@ -52,7 +52,7 @@ COPY --chown=appuser:appuser . .
 
 RUN chmod +x entrypoint.sh
 
-USER appuser
+USER 999
 
 EXPOSE 8000
 
