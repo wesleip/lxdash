@@ -90,6 +90,9 @@ jobs:
         uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: backend/Dockerfile
+          # Tell hadolint to read .hadolint.yaml (where we ignore DL3008).
+          # v3.x does not auto-load it from the workspace root.
+          config: .hadolint.yaml
           failure-threshold: warning
 
   # ---------------------------------------------------------------------------
