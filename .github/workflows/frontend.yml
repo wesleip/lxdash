@@ -112,9 +112,17 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # 5/5  Image vulnerability scan: build nginx + trivy + SARIF
+  #
+  # depends on every fast check (eslint, type-check, vitest, hadolint)
+  # so that a failure in any of them skips the slowest job. Free-plan
+  # quota saver: trivy pulls a base image, runs the multi-stage Node
+  # build, and scans \xE2\x80\x94 the most expensive step in this workflow. Running
+  # it after a guaranteed failure would waste minutes for no
+  # information.
   # ---------------------------------------------------------------------------
   trivy:
     name: trivy (image vulnerability scan)
+    needs: [eslint, type-check, vitest, hadolint]
     runs-on: ubuntu-latest
     permissions:
       contents: read
