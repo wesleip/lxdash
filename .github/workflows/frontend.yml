@@ -1,0 +1,107 @@
+# Frontend CI — runs on changes under frontend/ and nginx/, and on PRs to main.
+#
+# Five parallel jobs, all required to pass before the PR can merge:
+#   1. eslint (static analysis with flat config)
+#   2. tsc --noEmit (type check)
+#   3. vitest (unit tests)
+#   4. hadolint (nginx Dockerfile)
+#   5. trivy (nginx image vulnerability scan, SARIF -> Security tab)
+#
+# Branch protection rules are documented in CONTRIBUTING.md.
+
+name: frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "nginx/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "nginx/**"
+      - ".github/workflows/frontend.yml"
+
+concurrency:
+  group: frontend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eslint:
+    name: eslint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd frontend && npm ci
+      - run: cd frontend && npm run lint
+
+  type-check:
+    name: tsc --noEmit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd frontend && npm ci
+      - run: cd frontend && npm run type-check
+
+  vitest:
+    name: vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd frontend && npm ci
+      - run: cd frontend && npm test
+
+  hadolint:
+    name: hadolint (nginx Dockerfile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3
+        with:
+          dockerfile: nginx/Dockerfile
+          failure-threshold: warning
+
+  trivy:
+    name: trivy (image vulnerability scan)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build nginx image (embeds the frontend)
+        run: docker build -t lxdash-nginx:ci -f nginx/Dockerfile .
+      - name: Trivy scan (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: lxdash-nginx:ci
+          format: sarif
+          output: trivy-nginx.sarif
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-nginx-sarif
+          path: trivy-nginx.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-nginx.sarif
