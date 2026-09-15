@@ -44,7 +44,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Unix socket mounted at runtime. Override with: --build-arg LXD_GID=<gid>
 ARG LXD_GID=998
 RUN groupadd -g "${LXD_GID}" lxd 2>/dev/null || true \
-    && useradd -r -u 999 -g 999 -G "${LXD_GID}" -d /app appuser \
+    && useradd -r -u 999 -U -G "${LXD_GID}" -d /app appuser \
     && mkdir -p /app/data \
     && chown -R appuser:appuser /app
 
