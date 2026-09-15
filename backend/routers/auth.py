@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from dependencies import get_db
 from models.user import User
 from schemas.user import AccessToken, Token, TokenRefresh, TokenUser
+from services.audit_service import record_and_notify
 from services.auth_service import (
     access_token_expires_in_seconds,
     create_access_token,
@@ -44,6 +45,15 @@ async def login(
 
     if user is None or not verify_password(form_data.password, user.hashed_password):
         logger.warning("auth.login_failed", username=form_data.username)
+        await record_and_notify(
+            db,
+            user=user,
+            action="auth.login",
+            resource_type="auth",
+            resource_name=form_data.username,
+            status="failure",
+            detail="invalid credentials",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
@@ -51,6 +61,15 @@ async def login(
         )
 
     if not user.is_active:
+        await record_and_notify(
+            db,
+            user=user,
+            action="auth.login",
+            resource_type="auth",
+            resource_name=user.username,
+            status="failure",
+            detail="account disabled",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled.",
@@ -61,6 +80,14 @@ async def login(
     refresh = create_refresh_token(subject=user.username)
 
     logger.info("auth.login_success", username=user.username, user_id=user.id)
+    await record_and_notify(
+        db,
+        user=user,
+        action="auth.login",
+        resource_type="auth",
+        resource_name=user.username,
+        status="success",
+    )
 
     return Token(
         access_token=access,

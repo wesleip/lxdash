@@ -14,7 +14,7 @@ from schemas.container import (
     ContainerResponse,
     ContainerStats,
 )
-from services.audit_service import log_action
+from services.audit_service import record_and_notify
 from services.lxd_client import LXDClientError
 
 router = APIRouter(prefix="/containers", tags=["containers"])
@@ -136,9 +136,9 @@ async def create_container(
         if body.start_after_create:
             await lxd.start_container(body.name)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="container.create",
             resource_type="container",
             resource_name=body.name,
@@ -146,19 +146,17 @@ async def create_container(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="container.create",
         resource_type="container",
         resource_name=body.name,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()
 
     return _container_to_response(container)
 
@@ -182,9 +180,9 @@ async def delete_container(
             await lxd.stop_container(name, force=True)
         await lxd.delete_container(name)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="container.delete",
             resource_type="container",
             resource_name=name,
@@ -192,19 +190,17 @@ async def delete_container(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="container.delete",
         resource_type="container",
         resource_name=name,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -224,9 +220,9 @@ async def start_container(
         await lxd.start_container(name, timeout=body.timeout, force=body.force)
         container = await lxd.get_container(name)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="container.start",
             resource_type="container",
             resource_name=name,
@@ -234,19 +230,17 @@ async def start_container(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="container.start",
         resource_type="container",
         resource_name=name,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()
     return _container_to_response(container)
 
 
@@ -267,9 +261,9 @@ async def stop_container(
         await lxd.stop_container(name, timeout=body.timeout, force=body.force)
         container = await lxd.get_container(name)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="container.stop",
             resource_type="container",
             resource_name=name,
@@ -277,19 +271,17 @@ async def stop_container(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="container.stop",
         resource_type="container",
         resource_name=name,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()
     return _container_to_response(container)
 
 
@@ -310,9 +302,9 @@ async def restart_container(
         await lxd.restart_container(name, timeout=body.timeout, force=body.force)
         container = await lxd.get_container(name)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="container.restart",
             resource_type="container",
             resource_name=name,
@@ -320,17 +312,15 @@ async def restart_container(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="container.restart",
         resource_type="container",
         resource_name=name,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()
     return _container_to_response(container)

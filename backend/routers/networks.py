@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from dependencies import CurrentUser, DBDep, LXDDep
 from schemas.network import NetworkCreate, NetworkResponse
-from services.audit_service import log_action
+from services.audit_service import record_and_notify
 from services.lxd_client import LXDClientError
 
 router = APIRouter(prefix="/networks", tags=["networks"])
@@ -65,9 +65,9 @@ async def create_network(
     try:
         network = await lxd.create_network(config)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="network.create",
             resource_type="network",
             resource_name=body.name,
@@ -75,19 +75,17 @@ async def create_network(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="network.create",
         resource_type="network",
         resource_name=body.name,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()
     return _network_to_response(network)
 
 
@@ -107,9 +105,9 @@ async def delete_network(
     try:
         await lxd.delete_network(name)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="network.delete",
             resource_type="network",
             resource_name=name,
@@ -117,16 +115,14 @@ async def delete_network(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="network.delete",
         resource_type="network",
         resource_name=name,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()

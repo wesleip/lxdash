@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from dependencies import CurrentUser, DBDep, LXDDep
-from services.audit_service import log_action
+from services.audit_service import record_and_notify
 from services.lxd_client import LXDClientError
 
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -136,9 +136,9 @@ async def create_volume(
     try:
         volume = await lxd.create_storage_volume(pool, volume_config)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="storage_volume.create",
             resource_type="storage_volume",
             resource_name=f"{pool}/{body.name}",
@@ -146,17 +146,15 @@ async def create_volume(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="storage_volume.create",
         resource_type="storage_volume",
         resource_name=f"{pool}/{body.name}",
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()
     return _volume_to_response(volume)

@@ -21,6 +21,7 @@ required CI checks before merging to `main`.
 - **JWT authentication** — access tokens (15 min) + refresh tokens (7 days)
 - **Audit log** — immutable record of every mutating operation with user and timestamp
 - **Multi-host ready** — architecture supports multiple LXD hosts from phase 3 (see roadmap)
+- **Discord notifications** — optional webhook for auditable events (container create/stop, logins, failures)
 
 ## Tech stack
 
@@ -79,6 +80,26 @@ The LXD Unix socket is mounted into the backend container. The process user must
 ```bash
 usermod -aG lxd $USER
 ```
+
+### Discord notifications (optional)
+
+Every auditable event (container create/stop/restart/delete, image delete, network create/delete, login success/failure) can be forwarded to a Discord channel via webhook. Delivery is **best-effort** — failed POSTs are logged but never break the request.
+
+1. In Discord: channel **Settings → Integrations → Webhooks → New Webhook** → copy the URL
+2. Set in `backend/.env`:
+   ```bash
+   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/1234567890/abcdef...
+   ```
+3. Fine-tune (optional):
+   ```bash
+   DISCORD_NOTIFY_USERNAME=lxDash          # overrides the webhook's default name
+   DISCORD_NOTIFY_ON_SUCCESS=true          # disable to silence successful ops
+   DISCORD_NOTIFY_ON_FAILURE=true          # disable to silence failures
+   DISCORD_NOTIFY_ACTIONS=*                 # or CSV: "container.delete,auth.login"
+   DISCORD_NOTIFY_TIMEOUT_SECONDS=5
+   ```
+
+Leave `DISCORD_WEBHOOK_URL` empty to disable notifications entirely.
 
 ## Project structure
 
