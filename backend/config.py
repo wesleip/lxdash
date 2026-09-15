@@ -58,6 +58,19 @@ class Settings(BaseSettings):
         return v
 
     # ------------------------------------------------------------------ #
+    # Notifications (Discord webhook)                                      #
+    # ------------------------------------------------------------------ #
+    # When DISCORD_WEBHOOK_URL is unset, the notifier is a silent no-op.
+    DISCORD_WEBHOOK_URL: str | None = None
+    DISCORD_NOTIFY_USERNAME: str = "LXDash"
+    DISCORD_NOTIFY_ON_SUCCESS: bool = True
+    DISCORD_NOTIFY_ON_FAILURE: bool = True
+    # "*" subscribes to every action; otherwise a CSV like
+    # "container.delete,container.start,auth.login".
+    DISCORD_NOTIFY_ACTIONS: str = "*"
+    DISCORD_NOTIFY_TIMEOUT_SECONDS: float = 5.0
+
+    # ------------------------------------------------------------------ #
     # Application                                                          #
     # ------------------------------------------------------------------ #
     APP_ENV: str = "development"

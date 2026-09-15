@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from dependencies import CurrentUser, DBDep, LXDDep
 from schemas.image import ImageAlias, ImageImport, ImageResponse
-from services.audit_service import log_action
+from services.audit_service import record_and_notify
 from services.lxd_client import LXDClientError
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -74,9 +74,9 @@ async def import_image(
             local_alias=body.local_alias,
         )
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="image.import",
             resource_type="image",
             resource_name=body.alias,
@@ -84,19 +84,17 @@ async def import_image(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="image.import",
         resource_type="image",
         resource_name=image.fingerprint,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()
 
     return _image_to_response(image)
 
@@ -117,9 +115,9 @@ async def delete_image(
     try:
         await lxd.delete_image(fingerprint)
     except LXDClientError as exc:
-        log_action(
+        await record_and_notify(
             db,
-            user_id=current_user.id,
+            user=current_user,
             action="image.delete",
             resource_type="image",
             resource_name=fingerprint,
@@ -127,16 +125,14 @@ async def delete_image(
             status="failure",
             detail=str(exc),
         )
-        db.commit()
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    log_action(
+    await record_and_notify(
         db,
-        user_id=current_user.id,
+        user=current_user,
         action="image.delete",
         resource_type="image",
         resource_name=fingerprint,
         host_id=lxd.host_id,
         status="success",
     )
-    db.commit()

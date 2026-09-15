@@ -23,6 +23,7 @@ from config import get_settings
 # Import routers
 # ---------------------------------------------------------------------------
 from routers import auth, console, containers, images, metrics, networks, storage, users
+from services.discord_notifier import get_discord_notifier
 
 settings = get_settings()
 
@@ -90,8 +91,10 @@ logger = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Tables are created via Alembic (entrypoint.sh runs `alembic upgrade head`).
+    await get_discord_notifier().start()
     logger.info("startup", env=settings.APP_ENV)
     yield
+    await get_discord_notifier().stop()
     logger.info("shutdown")
 
 
