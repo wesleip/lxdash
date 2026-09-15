@@ -27,6 +27,9 @@ import type {
   User,
   UserCreate,
   UserUpdate,
+  BootstrapRequest,
+  BootstrapResult,
+  BootstrapStatus,
 } from '@/types/api'
 
 // ---------------------------------------------------------------------------
@@ -305,6 +308,18 @@ export const users = {
 
   delete: (id: number): Promise<void> =>
     del<void>(`/users/${id}`),
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap (first-node LXD cluster init — admin-only)
+// ---------------------------------------------------------------------------
+
+export const bootstrap = {
+  status: (signal?: AbortSignal): Promise<BootstrapStatus> =>
+    get<BootstrapStatus>('/bootstrap/status', signal),
+
+  cluster: (data: BootstrapRequest): Promise<BootstrapResult> =>
+    post<BootstrapResult>('/bootstrap/cluster', data),
 }
 
 // Re-export error class so callers can do `instanceof ApiError`

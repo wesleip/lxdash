@@ -15,6 +15,7 @@ const Networks = lazy(() => import('@/pages/Networks'))
 const Storage = lazy(() => import('@/pages/Storage'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const Users = lazy(() => import('@/pages/Users'))
+const Bootstrap = lazy(() => import('@/pages/Bootstrap'))
 
 function PageSpinner() {
   return (
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="images" element={<Images />} />
             <Route path="networks" element={<Networks />} />
             <Route path="storage" element={<Storage />} />
+            <Route path="bootstrap" element={<Bootstrap />} />
             <Route path="settings" element={<Settings />} />
             <Route path="users" element={<Users />} />
           </Route>
