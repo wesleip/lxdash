@@ -22,7 +22,7 @@ from config import get_settings
 # ---------------------------------------------------------------------------
 # Import routers
 # ---------------------------------------------------------------------------
-from routers import auth, console, containers, images, metrics, networks, storage, users
+from routers import auth, bootstrap, console, containers, images, metrics, networks, storage, users
 from services.discord_notifier import get_discord_notifier
 
 settings = get_settings()
@@ -148,6 +148,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(bootstrap.router)
 app.include_router(containers.router)
 app.include_router(images.router)
 app.include_router(networks.router)
