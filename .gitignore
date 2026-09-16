@@ -15,6 +15,12 @@ frontend/dist/
 # Data volume
 data/
 
+# Compose-level env file (read automatically by docker-compose for ${VAR}
+# interpolation in docker-compose.yml — separate from backend/.env.production
+# which is loaded via env_file INTO the container).
+/.env
+.env.local
+
 # Misc
 .DS_Store
 *.swp
