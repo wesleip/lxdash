@@ -328,3 +328,39 @@ export interface PaginatedResponse<T> {
   page_size: number
   has_next: boolean
 }
+
+// ---------------------------------------------------------------------------
+// Bootstrap (first-node LXD cluster init)
+// ---------------------------------------------------------------------------
+
+export type BootstrapState = 'uninitialized' | 'untrusted' | 'initialized'
+
+export type ConnectionType = 'socket' | 'tls'
+
+export interface BootstrapStatus {
+  state: BootstrapState
+  api_version?: string | null
+  server?: string | null
+  socket?: string | null
+  message?: string | null
+}
+
+export interface BootstrapClusterConfig {
+  server_name: string
+  cluster_password: string
+}
+
+export interface BootstrapRequest {
+  host_name: string
+  cluster: BootstrapClusterConfig
+}
+
+export interface BootstrapResult {
+  state: 'initialized'
+  host_id: number
+  host_name: string
+  address: string
+  connection_type: ConnectionType
+  is_active: boolean
+  created_at: string
+}
