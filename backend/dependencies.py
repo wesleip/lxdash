@@ -118,6 +118,14 @@ async def get_lxd_client(
 ) -> LXDClient | MockLXDClient:
     """Return a connected LXDClient (or MockLXDClient when LXD_MOCK=true).
 
+    Resolution rules:
+    - LXD_MOCK=true → return the in-memory mock (no DB lookup).
+    - host_id given → use it.
+    - host_id omitted + exactly one active host in the DB → use it.
+    - host_id omitted + zero active hosts → 422 with bootstrap hint.
+    - host_id omitted + multiple active hosts → 422; multi-host
+      selection lands in Phase 3 (Fase 3 do ROADMAP).
+
     Raises HTTP 404 if the host does not exist or is inactive,
     HTTP 502 if the connection to LXD fails.
     """
@@ -125,10 +133,7 @@ async def get_lxd_client(
         return MockLXDClient()
 
     if host_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Query parameter 'host_id' is required.",
-        )
+        host_id = _resolve_default_host_id(db)
 
     host: Host | None = db.query(Host).filter(Host.id == host_id, Host.is_active.is_(True)).first()
     if host is None:
@@ -159,6 +164,34 @@ async def get_lxd_client(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to the LXD host.",
         ) from exc
+
+
+def _resolve_default_host_id(db: Session) -> int:
+    """Pick the active host when the caller did not specify one.
+
+    Single-host deployments are the norm while Fase 3 (multi-host) is not
+    yet shipped — instead of forcing every API call to repeat
+    ``?host_id=1``, we transparently use the sole registered host.
+    """
+    active_hosts = db.query(Host).filter(Host.is_active.is_(True)).order_by(Host.id).all()
+    if len(active_hosts) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "No LXD hosts registered. Use the cluster-setup wizard "
+                "(GET /bootstrap/status) or POST /bootstrap/cluster to register one."
+            ),
+        )
+    if len(active_hosts) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Multiple LXD hosts registered ({len(active_hosts)}). "
+                "Specify ?host_id=<id> explicitly — multi-host selection UI "
+                "lands in Phase 3."
+            ),
+        )
+    return active_hosts[0].id
 
 
 LXDDep = Annotated[LXDClient | MockLXDClient, Depends(get_lxd_client)]
