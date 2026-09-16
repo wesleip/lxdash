@@ -26,6 +26,7 @@ State machine
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -71,10 +72,56 @@ class LXDBootstrap:
         if not os.path.exists(self.socket_path):
             raise LXDBootstrapError(
                 f"LXD socket not found at {self.socket_path}. "
-                "Is the LXD daemon installed and running on the host?",
+                "Is the LXD daemon installed and running on the host? "
+                "If LXD was installed via apt (not snap), the socket lives at "
+                "/var/lib/lxd/unix.socket instead.",
             )
+        # Pre-flight permission check — surfaces EACCES with a useful hint
+        # before httpx swallows it as a generic HTTPError.
+        self._check_socket_access()
         transport = httpx.AsyncHTTPTransport(uds=self.socket_path)
         return httpx.AsyncClient(transport=transport, timeout=self._timeout)
+
+    def _check_socket_access(self) -> None:
+        """Verify the current process can read the Unix socket.
+
+        LXD ships its socket as ``root:lxd 0660``. The backend must be in the
+        ``lxd`` group (or run as root, which we don't want). On most hosts the
+        ``lxd`` group is GID 998, but the user can override via
+        ``LXD_GID`` in the compose env (and the matching build arg).
+        """
+        try:
+            stat_result = os.stat(self.socket_path)
+        except OSError as exc:
+            raise LXDBootstrapError(
+                f"Cannot stat LXD socket at {self.socket_path}: {exc}",
+            ) from exc
+
+        if not stat.S_ISSOCK(stat_result.st_mode):
+            raise LXDBootstrapError(
+                f"{self.socket_path} exists but is not a Unix socket "
+                f"(mode={oct(stat_result.st_mode & 0o777)}).",
+            )
+
+        sock_uid = stat_result.st_uid
+        sock_gid = stat_result.st_gid
+        proc_uid = os.getuid()
+        proc_gid = os.getgid()
+        proc_groups = os.getgroups()
+
+        if sock_uid == proc_uid:
+            return  # we own the socket
+        if sock_gid in proc_groups or sock_gid == proc_gid:
+            return  # we are in the right group
+
+        raise LXDBootstrapError(
+            f"Permission denied on LXD socket {self.socket_path}: "
+            f"socket is owned by UID {sock_uid} GID {sock_gid}, "
+            f"backend runs as UID {proc_uid} GID {proc_gid} "
+            f"(supplementary groups: {proc_groups}). "
+            f"Add the backend to the lxd group, or set LXD_GID in the "
+            f"compose env to match the host's lxd group GID.",
+        )
 
     async def _get(self, client: httpx.AsyncClient, path: str) -> httpx.Response:
         return await client.get(f"http://lxd.local{path}")

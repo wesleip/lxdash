@@ -33,6 +33,25 @@ def _httpx_response(status_code: int, json_body: dict | None = None) -> MagicMoc
     return response
 
 
+def _patch_socket_access(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``_check_socket_access()`` a no-op for tests that mock the HTTP layer."""
+    import stat as stat_mod
+
+    sock_stat = type(
+        "Stat",
+        (),
+        {
+            "st_mode": stat_mod.S_IFSOCK | 0o660,
+            "st_uid": 0,
+            "st_gid": 998,
+        },
+    )()
+    monkeypatch.setattr("os.stat", lambda _: sock_stat)
+    monkeypatch.setattr("os.getuid", lambda: 0)
+    monkeypatch.setattr("os.getgid", lambda: 0)
+    monkeypatch.setattr("os.getgroups", lambda: [0, 998])
+
+
 # ---------------------------------------------------------------------------
 # Service-level: status detection
 # ---------------------------------------------------------------------------
@@ -41,6 +60,7 @@ def _httpx_response(status_code: int, json_body: dict | None = None) -> MagicMoc
 @pytest.mark.asyncio
 async def test_check_status_uninitialized(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("os.path.exists", lambda _: True)
+    _patch_socket_access(monkeypatch)
     root = _httpx_response(
         200,
         {
@@ -69,6 +89,7 @@ async def test_check_status_uninitialized(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.asyncio
 async def test_check_status_untrusted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("os.path.exists", lambda _: True)
+    _patch_socket_access(monkeypatch)
     root = _httpx_response(
         200,
         {
@@ -94,6 +115,7 @@ async def test_check_status_untrusted(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.asyncio
 async def test_check_status_initialized(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("os.path.exists", lambda _: True)
+    _patch_socket_access(monkeypatch)
     root = _httpx_response(
         200,
         {
@@ -123,6 +145,65 @@ async def test_check_status_socket_missing(monkeypatch: pytest.MonkeyPatch) -> N
         await LXDBootstrap("/var/missing.sock").check_status()
 
 
+def test_check_socket_access_reports_uid_gid_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the socket exists but the process can't read it, the error names
+    the offending UIDs/GIDs so the operator can diagnose without `docker exec`."""
+    import stat as stat_mod
+
+    sock_stat = type(
+        "Stat",
+        (),
+        {
+            "st_mode": stat_mod.S_IFSOCK | 0o660,
+            "st_uid": 0,
+            "st_gid": 998,
+        },
+    )()
+
+    monkeypatch.setattr("os.path.exists", lambda _: True)
+    monkeypatch.setattr("os.stat", lambda _: sock_stat)
+    monkeypatch.setattr("os.getuid", lambda: 999)
+    monkeypatch.setattr("os.getgid", lambda: 999)
+    monkeypatch.setattr("os.getgroups", lambda: [999])
+
+    bootstrap = LXDBootstrap("/var/snap/lxd/common/lxd/unix.socket")
+    with pytest.raises(LXDBootstrapError) as excinfo:
+        bootstrap._check_socket_access()
+
+    msg = str(excinfo.value)
+    assert "Permission denied" in msg
+    assert "UID 999" in msg
+    assert "GID 998" in msg
+    assert "LXD_GID" in msg
+
+
+def test_check_socket_access_passes_when_group_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the process's supplementary groups include the socket's GID, no error."""
+    import stat as stat_mod
+
+    sock_stat = type(
+        "Stat",
+        (),
+        {
+            "st_mode": stat_mod.S_IFSOCK | 0o660,
+            "st_uid": 0,
+            "st_gid": 998,
+        },
+    )()
+
+    monkeypatch.setattr("os.path.exists", lambda _: True)
+    monkeypatch.setattr("os.stat", lambda _: sock_stat)
+    monkeypatch.setattr("os.getuid", lambda: 999)
+    monkeypatch.setattr("os.getgid", lambda: 999)
+    monkeypatch.setattr("os.getgroups", lambda: [999, 998])
+
+    LXDBootstrap("/var/snap/lxd/common/lxd/unix.socket")._check_socket_access()  # no raise
+
+
 # ---------------------------------------------------------------------------
 # Service-level: bootstrap
 # ---------------------------------------------------------------------------
@@ -131,6 +212,7 @@ async def test_check_status_socket_missing(monkeypatch: pytest.MonkeyPatch) -> N
 @pytest.mark.asyncio
 async def test_bootstrap_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("os.path.exists", lambda _: True)
+    _patch_socket_access(monkeypatch)
     resp = _httpx_response(202, {"operation": "op1"})
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
@@ -152,6 +234,7 @@ async def test_bootstrap_success(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.asyncio
 async def test_bootstrap_refused_with_lxd_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("os.path.exists", lambda _: True)
+    _patch_socket_access(monkeypatch)
     resp = _httpx_response(
         400,
         {"error": "cluster member already exists"},
