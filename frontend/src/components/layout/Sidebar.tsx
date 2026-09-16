@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   Server,
   Users,
+  Plug,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/ui'
@@ -29,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/images', label: 'Images', icon: Image },
   { to: '/networks', label: 'Networks', icon: Network },
   { to: '/storage', label: 'Storage', icon: Database },
+  { to: '/bootstrap', label: 'Cluster setup', icon: Plug, adminOnly: true },
   { to: '/users', label: 'Users', icon: Users, adminOnly: true },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]

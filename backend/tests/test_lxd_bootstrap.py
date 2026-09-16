@@ -46,10 +46,13 @@ def _patch_socket_access(monkeypatch: pytest.MonkeyPatch) -> None:
             "st_gid": 998,
         },
     )()
-    monkeypatch.setattr("os.stat", lambda _: sock_stat)
-    monkeypatch.setattr("os.getuid", lambda: 0)
-    monkeypatch.setattr("os.getgid", lambda: 0)
-    monkeypatch.setattr("os.getgroups", lambda: [0, 998])
+    # Accept any call signature so the mock also tolerates os.stat() calls
+    # made by pydantic-settings (e.g. pathlib.is_fifo passes
+    # follow_symlinks=True) when LXDBootstrap() triggers get_settings().
+    monkeypatch.setattr("os.stat", lambda *args, **kwargs: sock_stat)
+    monkeypatch.setattr("os.getuid", lambda *args, **kwargs: 0)
+    monkeypatch.setattr("os.getgid", lambda *args, **kwargs: 0)
+    monkeypatch.setattr("os.getgroups", lambda *args, **kwargs: [0, 998])
 
 
 # ---------------------------------------------------------------------------
