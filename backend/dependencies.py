@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from config import get_settings
 from database import SessionLocal
 from models.host import Host
-from models.user import User
+from models.user import User, UserRole
 from services.auth_service import decode_token
 from services.lxd_client import LXDClient, LXDClientError
 from services.lxd_client_mock import MockLXDClient
@@ -87,6 +87,23 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def require_admin(current_user: CurrentUser) -> User:
+    """Reject non-admin callers with HTTP 403.
+
+    Used by sensitive endpoints like the cluster bootstrap. Phase 4 (RBAC)
+    will generalise this into a proper role/permission dependency tree.
+    """
+    if current_user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required for this operation.",
+        )
+    return current_user
+
+
+AdminUser = Annotated[User, Depends(require_admin)]
 
 
 # ---------------------------------------------------------------------------
