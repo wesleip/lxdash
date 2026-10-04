@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Server, TriangleAlert } from 'lucide-react'
-import { useActiveHostId, useHosts } from '@/lib/hooks/useHosts'
+import { useEffectiveHostId, useHosts } from '@/lib/hooks/useHosts'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
 
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
  */
 export function HostIndicator() {
   const { data: hosts } = useHosts()
-  const activeHostId = useActiveHostId()
+  const activeHostId = useEffectiveHostId()
   const role = useAuthStore((s) => s.user?.role)
 
   // Still loading: render nothing rather than flash "no host".

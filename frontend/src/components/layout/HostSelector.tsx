@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { useUiStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
-import { useActiveHosts } from '@/lib/hooks/useHosts'
+import { useEffectiveHostId, useActiveHosts } from '@/lib/hooks/useHosts'
 import { cn } from '@/lib/utils'
 
 interface HostSelectorProps {
@@ -18,7 +18,8 @@ interface HostSelectorProps {
  */
 export function HostSelector({ className }: HostSelectorProps) {
   const hosts = useActiveHosts()
-  const { activeHostId, setActiveHostId } = useUiStore()
+  const effectiveHostId = useEffectiveHostId()
+  const { setActiveHostId } = useUiStore()
   const role = useAuthStore((s) => s.user?.role)
 
   if (hosts.length === 0) {
@@ -62,8 +63,10 @@ export function HostSelector({ className }: HostSelectorProps) {
 
   // A stale id (host removed in another tab, or persisted from an older
   // build) must degrade to "nothing selected" instead of leaving the <select>
-  // pointing at an option that no longer exists.
-  const selection = hosts.some((h) => h.id === activeHostId) ? activeHostId : null
+  // pointing at an option that no longer exists. With a single host the
+  // effective id is that host even while the store still says "Automatic", so
+  // the select shows it instead of rendering blank.
+  const selection = hosts.some((h) => h.id === effectiveHostId) ? effectiveHostId : null
   const needsExplicitChoice = hosts.length > 1 && selection === null
 
   return (

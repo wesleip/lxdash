@@ -45,6 +45,26 @@ export function useActiveHostId(): number | null {
   return data.some((h) => h.id === activeHostId && h.is_active) ? activeHostId : null
 }
 
+/**
+ * The host the UI should render as selected: the explicit choice, or — while
+ * the choice is still "Automatic" (`activeHostId === null`) — the single
+ * registered active host, which is exactly the host the backend would resolve
+ * the request to.
+ *
+ * `null` only when there is genuinely nothing to point at: no hosts yet, or
+ * several active hosts without a pick (the case that must ask the operator).
+ */
+export function useEffectiveHostId(): number | null {
+  const selected = useActiveHostId()
+  const { data, isLoading } = useHosts()
+
+  if (selected !== null) return selected
+  if (isLoading || !data) return null
+
+  const active = data.filter((h) => h.is_active)
+  return active.length === 1 ? active[0].id : null
+}
+
 /** Liveness probe for one host. Polled on its own so it cannot block the list. */
 export function useHostHealth(hostId: number | null, options?: { enabled?: boolean }) {
   return useQuery({
