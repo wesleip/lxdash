@@ -104,6 +104,57 @@ def _state_to_response(container, state) -> ContainerStateResponse:
     )
 
 
+def _state_to_response(container, state) -> ContainerStateResponse:
+    """Map a pylxd state object to ContainerStateResponse.
+
+    Every field is read defensively: LXD omits keys (disk on some instance
+    types, network while stopped) and pylxd's AttributeDict raises
+    AttributeError instead of returning None for a missing key.
+    """
+    cpu = getattr(state, "cpu", None) or {}
+    memory = getattr(state, "memory", None) or {}
+
+    disk = {
+        path: ContainerStateDisk(usage=int(info.get("usage", 0)))
+        for path, info in (getattr(state, "disk", None) or {}).items()
+    }
+
+    network: dict[str, ContainerStateInterface] | None = None
+    raw_network = getattr(state, "network", None)
+    if raw_network is not None:
+        network = {}
+        for iface, info in raw_network.items():
+            network[iface] = ContainerStateInterface(
+                addresses=[ContainerStateAddress(**addr) for addr in info.get("addresses", [])],
+                counters=ContainerStateCounters(**info.get("counters", {})),
+                hwaddr=info.get("hwaddr", ""),
+                host_name=info.get("host_name", ""),
+                mtu=int(info.get("mtu", 1500)),
+                state=info.get("state", ""),
+                type=info.get("type", ""),
+            )
+
+    return ContainerStateResponse(
+        status=container.status,
+        status_code=container.status_code,
+        cpu=ContainerStateCpu(
+            usage=int(cpu.get("usage", 0)),
+            user_time=int(cpu.get("user_time", 0)),
+            system_time=int(cpu.get("system_time", 0)),
+        ),
+        memory=ContainerMemoryUsage(
+            usage=int(memory.get("usage", 0)),
+            usage_peak=int(memory.get("usage_peak", 0)),
+            swap_usage=int(memory.get("swap_usage", 0)),
+            swap_usage_peak=int(memory.get("swap_usage_peak", 0)),
+        ),
+        disk=disk,
+        network=network,
+        pid=int(getattr(state, "pid", 0) or 0),
+        processes=int(getattr(state, "processes", 0) or 0),
+    )
+
+
 # ---------------------------------------------------------------------------
 # GET /containers
 # ---------------------------------------------------------------------------
