@@ -97,6 +97,10 @@ async function request<T>(
     headers: buildHeaders(),
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal,
+    // API responses are never safe to reuse. Without this, the browser may
+    // serve a stale `[]` from a previous visit even though the DB now has
+    // rows.
+    cache: 'no-store',
   })
 
   if (response.status === 401) {

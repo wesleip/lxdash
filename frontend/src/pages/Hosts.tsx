@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Loader2, Plus, Trash2, Server, Activity } from 'lucide-react'
+import { Loader2, Plus, RefreshCw, Trash2, Server, Activity } from 'lucide-react'
 import { hosts as hostsApi } from '@/lib/api'
 import type { ConnectionType, HostCreate } from '@/types/api'
 import { Button } from '@/components/ui/button'
@@ -218,7 +218,7 @@ export default function Hosts() {
   const role = useAuthStore((s) => s.user?.role)
   const isAdmin = role === 'admin'
 
-  const { data, isLoading, isError, error } = useHosts()
+  const { data, isLoading, isError, error, isFetching, refetch } = useHosts()
 
   const removeMut = useMutation({
     mutationFn: (hostId: number) => hostsApi.remove(hostId),
@@ -227,11 +227,27 @@ export default function Hosts() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">LXD hosts</h1>
-        <p className="text-muted-foreground text-sm">
-          Every container, image, network and storage request is served by one of these daemons.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">LXD hosts</h1>
+          <p className="text-muted-foreground text-sm">
+            Every container, image, network and storage request is served by one of these daemons.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          className="shrink-0"
+        >
+          {isFetching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          <span className="ml-1.5">Refresh</span>
+        </Button>
       </div>
 
       {isLoading && <LoadingState label="Loading hosts…" />}
@@ -245,19 +261,36 @@ export default function Hosts() {
           </div>
 
           {(data?.length ?? 0) === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-              {isAdmin ? (
-                <>
-                  No hosts registered yet.{' '}
-                  <Link to="/bootstrap" className="text-primary hover:underline">
-                    Register the local daemon
-                  </Link>
-                  , or add a remote one below.
-                </>
-              ) : (
-                'No hosts registered yet. Ask an administrator to register one.'
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground space-y-3">
+              <p>
+                {isAdmin ? (
+                  <>
+                    No hosts registered yet.{' '}
+                    <Link to="/bootstrap" className="text-primary hover:underline">
+                      Register the local daemon
+                    </Link>
+                    , or add a remote one below.
+                  </>
+                ) : (
+                  'No hosts registered yet. Ask an administrator to register one.'
+                )}
+              </p>
+              {!isAdmin && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                >
+                  {isFetching ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  <span className="ml-1.5">Check again</span>
+                </Button>
               )}
-            </p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

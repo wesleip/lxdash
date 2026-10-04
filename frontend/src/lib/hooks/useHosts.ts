@@ -14,11 +14,19 @@ export const hostKeys = {
   health: (hostId: number) => [...hostKeys.all, 'health', hostId] as const,
 }
 
-/** Registered hosts, active or not. */
+/** Registered hosts, active or not.
+ *
+ * `refetchOnMount: 'always'` is deliberate: the hosts registry changes rarely
+ * but each visit to the page must reflect the current database state. Without
+ * it, a previous visit that landed while the DB was empty caches `[]` for the
+ * 30s `staleTime` and a host registered in the meantime is invisible until the
+ * cache goes stale.
+ */
 export function useHosts() {
   return useQuery({
     queryKey: hostKeys.list(),
     queryFn: ({ signal }) => hosts.list(signal),
+    refetchOnMount: 'always',
   })
 }
 
