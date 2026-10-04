@@ -9,18 +9,22 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
 
-from config import get_settings
 from database import SessionLocal
-from models.host import Host
 from models.user import User, UserRole
 from services.auth_service import decode_token
+from services.host_service import (
+    AmbiguousHostError,
+    HostNotFoundError,
+    NoHostRegisteredError,
+    open_client,
+    resolve_host,
+)
 from services.lxd_client import LXDClient, LXDClientError
 from services.lxd_client_mock import MockLXDClient
 
-settings = get_settings()
-logger = structlog.get_logger(__name__)
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -118,80 +122,45 @@ async def get_lxd_client(
 ) -> LXDClient | MockLXDClient:
     """Return a connected LXDClient (or MockLXDClient when LXD_MOCK=true).
 
-    Resolution rules:
-    - LXD_MOCK=true → return the in-memory mock (no DB lookup).
-    - host_id given → use it.
-    - host_id omitted + exactly one active host in the DB → use it.
-    - host_id omitted + zero active hosts → 422 with bootstrap hint.
-    - host_id omitted + multiple active hosts → 422; multi-host
-      selection lands in Phase 3 (Fase 3 do ROADMAP).
+    ``host_id`` is optional: with a single registered host the request is
+    served by it, which keeps a single-host deployment free of a query
+    parameter everywhere. As soon as a second host exists the caller must name
+    the one it means.
 
-    Raises HTTP 404 if the host does not exist or is inactive,
-    HTTP 502 if the connection to LXD fails.
+    Host resolution runs before the LXD_MOCK short-circuit on purpose —
+    development mode must hit the same registry gate as production, otherwise
+    "no host registered" only ever surfaces in production.
+
+    Raises HTTP 409 when no host is registered, HTTP 422 when the choice is
+    ambiguous, HTTP 404 when ``host_id`` is unknown, and HTTP 502 when the
+    connection to LXD fails.
     """
-    if settings.LXD_MOCK:
-        return MockLXDClient()
-
-    if host_id is None:
-        host_id = _resolve_default_host_id(db)
-
-    host: Host | None = db.query(Host).filter(Host.id == host_id, Host.is_active.is_(True)).first()
-    if host is None:
+    try:
+        host = resolve_host(db, host_id)
+    except NoHostRegisteredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except AmbiguousHostError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except HostNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Host {host_id} not found.",
-        )
+            detail=str(exc),
+        ) from exc
 
     try:
-        if host.connection_type.value == "socket":
-            return await LXDClient.connect_socket(host.address, host_id=host.id)
-        else:
-            if not host.tls_cert or not host.tls_key:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Host {host_id} is configured for TLS but has no certificate.",
-                )
-            return await LXDClient.connect_tls(
-                endpoint=host.address,
-                cert_pem=host.tls_cert,
-                key_pem=host.tls_key,
-                server_cert_pem=host.tls_server_cert,
-                host_id=host.id,
-            )
+        return await open_client(host)
     except LXDClientError as exc:
-        logger.warning("lxd.connect_failed", host_id=host_id, error=str(exc))
+        logger.warning("lxd.connect_failed", host_id=host.id, error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to the LXD host.",
         ) from exc
-
-
-def _resolve_default_host_id(db: Session) -> int:
-    """Pick the active host when the caller did not specify one.
-
-    Single-host deployments are the norm while Fase 3 (multi-host) is not
-    yet shipped — instead of forcing every API call to repeat
-    ``?host_id=1``, we transparently use the sole registered host.
-    """
-    active_hosts = db.query(Host).filter(Host.is_active.is_(True)).order_by(Host.id).all()
-    if len(active_hosts) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                "No LXD hosts registered. Use the cluster-setup wizard "
-                "(GET /bootstrap/status) or POST /bootstrap/cluster to register one."
-            ),
-        )
-    if len(active_hosts) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"Multiple LXD hosts registered ({len(active_hosts)}). "
-                "Specify ?host_id=<id> explicitly — multi-host selection UI "
-                "lands in Phase 3."
-            ),
-        )
-    return active_hosts[0].id
 
 
 LXDDep = Annotated[LXDClient | MockLXDClient, Depends(get_lxd_client)]

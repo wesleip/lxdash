@@ -1,6 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, AlertCircle, CheckCircle2, Server, Plug } from 'lucide-react'
+import {
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Server,
+  Plug,
+  PlugZap,
+  ServerOff,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { bootstrap as bootstrapApi } from '@/lib/api'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -8,19 +16,25 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import type { BootstrapResult } from '@/types/api'
+import { hostKeys } from '@/lib/hooks/useHosts'
+import type { BootstrapResult, BootstrapState, BootstrapStatus } from '@/types/api'
 
 // ---------------------------------------------------------------------------
 // Status card — shown at the top, polls every 3s while in 'uninitialized'
 // ---------------------------------------------------------------------------
 
-function StatusBadge({ state }: { state: 'uninitialized' | 'untrusted' | 'initialized' }) {
-  const map = {
-    uninitialized: { label: 'Uninitialized', className: 'bg-warning/15 text-warning border-warning/30' },
-    untrusted: { label: 'Untrusted', className: 'bg-destructive/15 text-destructive border-destructive/30' },
-    initialized: { label: 'Initialized', className: 'bg-success/15 text-success border-success/30' },
-  } as const
-  const { label, className } = map[state]
+const STATUS_STYLES: Record<BootstrapState, { label: string; className: string }> = {
+  unreachable: {
+    label: 'Unreachable',
+    className: 'bg-destructive/15 text-destructive border-destructive/30',
+  },
+  uninitialized: { label: 'Uninitialized', className: 'bg-warning/15 text-warning border-warning/30' },
+  untrusted: { label: 'Untrusted', className: 'bg-destructive/15 text-destructive border-destructive/30' },
+  initialized: { label: 'Initialized', className: 'bg-success/15 text-success border-success/30' },
+}
+
+function StatusBadge({ state }: { state: BootstrapState }) {
+  const { label, className } = STATUS_STYLES[state]
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${className}`}>
       {label}
@@ -208,7 +222,7 @@ function BootstrapForm({ onSuccess }: { onSuccess: (result: BootstrapResult) => 
 }
 
 // ---------------------------------------------------------------------------
-// Result card — shown after a successful bootstrap
+// Result card — shown after a successful registration or bootstrap
 // ---------------------------------------------------------------------------
 
 function SuccessCard({ result }: { result: BootstrapResult }) {
@@ -217,10 +231,10 @@ function SuccessCard({ result }: { result: BootstrapResult }) {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base text-success">
           <CheckCircle2 className="h-4 w-4" />
-          Cluster initialized
+          Host registered
         </CardTitle>
         <CardDescription>
-          The LXD cluster has been bootstrapped and the host is registered.
+          The host is registered and the dashboard can now talk to LXD.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
@@ -251,7 +265,7 @@ function SuccessCard({ result }: { result: BootstrapResult }) {
 }
 
 // ---------------------------------------------------------------------------
-// Untrusted / already-initialized info cards
+// Untrusted cluster card
 // ---------------------------------------------------------------------------
 
 function UntrustedCard() {
@@ -279,24 +293,142 @@ function UntrustedCard() {
   )
 }
 
-function AlreadyInitializedCard({ hostName }: { hostName?: string }) {
+// ---------------------------------------------------------------------------
+// Register card — the path for a daemon that is already running
+// ---------------------------------------------------------------------------
+
+/**
+ * The state this whole flow exists for.
+ *
+ * A host that already runs containers answers `initialized` to
+ * `POST /bootstrap/cluster`, so the wizard used to show "Nothing to do here"
+ * while no `hosts` row existed — and every resource route refused to serve.
+ * Registering adopts the daemon as-is: no preseed, no configuration change.
+ */
+function RegisterCard({
+  status,
+  onRegistered,
+}: {
+  status: BootstrapStatus
+  onRegistered: (result: BootstrapResult) => void
+}) {
+  const qc = useQueryClient()
+  const [hostName, setHostName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const registeredHostId = status.host_id ?? null
+
+  const mut = useMutation({
+    mutationFn: () =>
+      bootstrapApi.register(hostName.trim() ? { host_name: hostName.trim() } : {}),
+    onSuccess: (result) => {
+      void qc.invalidateQueries({ queryKey: hostKeys.list() })
+      onRegistered(result)
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  if (registeredHostId !== null) {
+    return (
+      <Card className="border-success/30">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base text-success">
+            <CheckCircle2 className="h-4 w-4" />
+            Host registered
+          </CardTitle>
+          <CardDescription>
+            The daemon on this host is reachable and registered as{' '}
+            <span className="font-mono">{status.host_name}</span> (#{registeredHostId}).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link to="/" className={cn(buttonVariants({ variant: 'default' }))}>
+            Go to dashboard
+          </Link>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
-    <Card className="border-success/30">
+    <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base text-success">
-          <CheckCircle2 className="h-4 w-4" />
-          Already initialized
+        <CardTitle className="flex items-center gap-2 text-base">
+          <PlugZap className="h-4 w-4" />
+          Register this daemon
         </CardTitle>
         <CardDescription>
-          The LXD cluster on this host is already initialized
-          {hostName && <> (<span className="font-mono">{hostName}</span>)</>}.
-          Nothing to do here.
+          LXD is already running here{status.server_name && (
+            <> as <span className="font-mono">{status.server_name}</span></>
+          )}{' '}
+          {status.clustered ? 'and is part of a cluster' : 'as a standalone node'}. Register it to
+          give this panel access — nothing in the daemon is reconfigured.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Link to="/" className={cn(buttonVariants({ variant: 'default' }))}>
-          Go to dashboard
-        </Link>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            setError(null)
+            mut.mutate()
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="register-host-name">Host name</Label>
+            <Input
+              id="register-host-name"
+              placeholder={status.server_name ?? 'node1'}
+              value={hostName}
+              onChange={(e) => setHostName(e.target.value)}
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional. Defaults to the name LXD reports; must be unique in the database.
+            </p>
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+
+          <Button type="submit" isLoading={mut.isPending}>
+            Register host
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
+function UnreachableCard({ message }: { message?: string | null }) {
+  return (
+    <Card className="border-destructive/30">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base text-destructive">
+          <ServerOff className="h-4 w-4" />
+          LXD daemon not reachable
+        </CardTitle>
+        <CardDescription>
+          The panel could not open the LXD Unix socket, so there is nothing to register yet.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="text-sm space-y-2">
+        {message && (
+          <pre className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs font-mono whitespace-pre-wrap overflow-x-auto">
+            {message}
+          </pre>
+        )}
+        <p>Check, on the LXD host:</p>
+        <pre className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs font-mono overflow-x-auto">
+          {`systemctl status lxd
+ls -l /var/snap/lxd/common/lxd/unix.socket   # or /var/lib/lxd/unix.socket
+id -nG                                      # backend must be in the lxd group`}
+        </pre>
+        <p className="text-muted-foreground">
+          When the socket is mounted and readable, reload this page.
+        </p>
       </CardContent>
     </Card>
   )
@@ -318,20 +450,29 @@ export default function Bootstrap() {
     refetchInterval: 3000,
   })
 
-  // After a successful bootstrap, invalidate and re-fetch the status so the
-  // page transitions from 'uninitialized' → 'initialized' cleanly.
-  if (result) {
-    void qc.invalidateQueries({ queryKey: ['bootstrap', 'status'] })
-  }
+  // Refetch the status after a registration so the page transitions to
+  // 'initialized' and shows the host row. Must be an effect: invalidating
+  // during render is a side effect React is allowed to discard (or repeat).
+  useEffect(() => {
+    if (result) {
+      void qc.invalidateQueries({ queryKey: ['bootstrap', 'status'] })
+    }
+  }, [result, qc])
 
   const state = status.data?.state
+
+  const onRegistered = (r: BootstrapResult) => {
+    setResult(r)
+    void qc.invalidateQueries({ queryKey: hostKeys.list() })
+  }
 
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Cluster setup</h1>
         <p className="text-muted-foreground text-sm">
-          Initialize the first node of the LXD cluster that this LXDash instance will connect to.
+          Register the LXD daemons this LXDash instance manages, or bootstrap the first node of
+          a brand-new cluster.
         </p>
       </div>
 
@@ -339,17 +480,14 @@ export default function Bootstrap() {
 
       {result ? (
         <SuccessCard result={result} />
+      ) : state === 'unreachable' ? (
+        <UnreachableCard message={status.data?.message} />
       ) : state === 'uninitialized' ? (
-        <BootstrapForm
-          onSuccess={(r) => {
-            setResult(r)
-            void qc.invalidateQueries({ queryKey: ['bootstrap', 'status'] })
-          }}
-        />
+        <BootstrapForm onSuccess={onRegistered} />
       ) : state === 'untrusted' ? (
         <UntrustedCard />
-      ) : state === 'initialized' ? (
-        <AlreadyInitializedCard />
+      ) : state === 'initialized' && status.data ? (
+        <RegisterCard status={status.data} onRegistered={onRegistered} />
       ) : null}
     </div>
   )

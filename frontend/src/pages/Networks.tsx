@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, AlertCircle, Trash2, Plus, ChevronDown } from 'lucide-react'
+import { Trash2, Plus, ChevronDown } from 'lucide-react'
 import { networks as networksApi } from '@/lib/api'
 import type { CreateNetworkRequest, NetworkType } from '@/types/api'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { LoadingState, ResourceError } from '@/components/common/ResourceState'
+import { useActiveHostId } from '@/lib/hooks/useHosts'
 
 const NETWORK_TYPES: NetworkType[] = ['bridge', 'macvlan', 'physical', 'ovn']
 
@@ -23,6 +25,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function Networks() {
   const qc = useQueryClient()
+  const hostId = useActiveHostId()
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState<CreateNetworkRequest>({
     name: '',
@@ -37,12 +40,12 @@ export default function Networks() {
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['networks'],
-    queryFn: ({ signal }) => networksApi.list(signal),
+    queryKey: ['networks', hostId],
+    queryFn: ({ signal }) => networksApi.list(hostId, signal),
   })
 
   const createMut = useMutation({
-    mutationFn: () => networksApi.create(form),
+    mutationFn: () => networksApi.create(hostId, form),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['networks'] })
       setShowCreate(false)
@@ -53,7 +56,7 @@ export default function Networks() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: (name: string) => networksApi.delete(name),
+    mutationFn: (name: string) => networksApi.delete(hostId, name),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['networks'] }),
   })
 
@@ -188,18 +191,8 @@ export default function Networks() {
 
       {/* Networks table */}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
-        {isLoading && (
-          <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading networks…</span>
-          </div>
-        )}
-        {isError && (
-          <div className="flex items-center justify-center py-12 gap-2 text-destructive">
-            <AlertCircle className="h-5 w-5" />
-            <span className="text-sm">{(error as Error).message}</span>
-          </div>
-        )}
+        {isLoading && <LoadingState label="Loading networks…" />}
+        {isError && <ResourceError error={error} />}
         {!isLoading && !isError && data && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

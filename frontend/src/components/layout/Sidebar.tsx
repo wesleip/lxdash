@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
+import { HostSelector } from './HostSelector'
 
 interface NavItem {
   to: string
@@ -30,13 +31,14 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/images', label: 'Images', icon: Image },
   { to: '/networks', label: 'Networks', icon: Network },
   { to: '/storage', label: 'Storage', icon: Database },
+  { to: '/hosts', label: 'LXD hosts', icon: Server },
   { to: '/bootstrap', label: 'Cluster setup', icon: Plug, adminOnly: true },
   { to: '/users', label: 'Users', icon: Users, adminOnly: true },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
 export function Sidebar() {
-  const { sidebarOpen, toggleSidebar, activeHostId } = useUiStore()
+  const { sidebarOpen, toggleSidebar } = useUiStore()
   const { user, logout } = useAuthStore()
 
   return (
@@ -73,12 +75,8 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Active host indicator */}
-      {sidebarOpen && activeHostId && (
-        <div className="px-3 py-2 mx-2 mt-2 rounded-md bg-primary/10 text-primary text-xs font-medium truncate">
-          Host: {activeHostId}
-        </div>
-      )}
+      {/* Active host */}
+      {sidebarOpen && <HostSelector />}
 
       {/* Navigation */}
       <nav className="flex-1 py-2 overflow-y-auto">

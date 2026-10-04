@@ -6,7 +6,6 @@ import {
   RefreshCw,
   Trash2,
   Terminal,
-  AlertCircle,
   Loader2,
   Plus,
 } from 'lucide-react'
@@ -14,6 +13,8 @@ import { containers } from '@/lib/api'
 import type { ContainerSummary, ContainerStatus } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { LoadingState, ResourceError } from '@/components/common/ResourceState'
+import { useActiveHostId } from '@/lib/hooks/useHosts'
 import { cn, formatRelativeTime, formatIpv4 } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -43,32 +44,34 @@ function statusVariant(
 
 interface RowActionsProps {
   container: ContainerSummary
-  onMutate: () => void
+  hostId: number | null
 }
 
-function RowActions({ container, onMutate }: RowActionsProps) {
+function RowActions({ container, hostId }: RowActionsProps) {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
+  // Prefix match: every host's container list is invalidated, which is what we
+  // want — an action on this host can change what another host reports (e.g.
+  // clustered storage or image availability).
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['containers'] })
-    onMutate()
   }
 
   const startMut = useMutation({
-    mutationFn: () => containers.start(container.name),
+    mutationFn: () => containers.start(hostId, container.name),
     onSettled: invalidate,
   })
   const stopMut = useMutation({
-    mutationFn: () => containers.stop(container.name),
+    mutationFn: () => containers.stop(hostId, container.name),
     onSettled: invalidate,
   })
   const restartMut = useMutation({
-    mutationFn: () => containers.restart(container.name),
+    mutationFn: () => containers.restart(hostId, container.name),
     onSettled: invalidate,
   })
   const deleteMut = useMutation({
-    mutationFn: () => containers.delete(container.name),
+    mutationFn: () => containers.delete(hostId, container.name),
     onSettled: invalidate,
   })
 
@@ -149,10 +152,11 @@ function RowActions({ container, onMutate }: RowActionsProps) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const hostId = useActiveHostId()
 
   const { data, isLoading, isError, error, isFetching } = useQuery({
-    queryKey: ['containers'],
-    queryFn: ({ signal }) => containers.list(signal),
+    queryKey: ['containers', hostId],
+    queryFn: ({ signal }) => containers.list(hostId, signal),
     refetchInterval: 5000,
   })
 
@@ -202,19 +206,9 @@ export default function Dashboard() {
           )}
         </div>
 
-        {isLoading && (
-          <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading containers…</span>
-          </div>
-        )}
+        {isLoading && <LoadingState label="Loading containers…" />}
 
-        {isError && (
-          <div className="flex items-center justify-center py-12 gap-2 text-destructive">
-            <AlertCircle className="h-5 w-5" />
-            <span className="text-sm">{(error as Error).message}</span>
-          </div>
-        )}
+        {isError && <ResourceError error={error} />}
 
         {!isLoading && !isError && data && (
           <div className="overflow-x-auto">
@@ -271,7 +265,7 @@ export default function Dashboard() {
                       {formatRelativeTime(container.created_at)}
                     </td>
                     <td className="px-4 py-3">
-                      <RowActions container={container} onMutate={() => {}} />
+                      <RowActions container={container} hostId={hostId} />
                     </td>
                   </tr>
                 ))}

@@ -27,7 +27,11 @@ import type {
   User,
   UserCreate,
   UserUpdate,
+  Host,
+  HostCreate,
+  HostHealth,
   BootstrapRequest,
+  BootstrapRegisterRequest,
   BootstrapResult,
   BootstrapStatus,
 } from '@/types/api'
@@ -37,6 +41,18 @@ import type {
 // ---------------------------------------------------------------------------
 
 const BASE_URL = '/api'
+
+/**
+ * Every LXD-scoped endpoint is served by a `hosts` row. `null` means "let the
+ * backend pick": it falls back to the single registered host and answers 422 if
+ * more than one exists, which is the right default for a single-host install.
+ */
+export type HostId = number | null
+
+/** Append `host_id` to *path* unless the caller deferred to the backend. */
+function hostPath(path: string, hostId: HostId): string {
+  return hostId === null ? path : `${path}?host_id=${hostId}`
+}
 
 function getToken(): string | null {
   try {
@@ -159,74 +175,80 @@ export const auth = {
 // ---------------------------------------------------------------------------
 
 export const containers = {
-  list: (signal?: AbortSignal): Promise<ContainerSummary[]> =>
-    get<ContainerSummary[]>('/containers', signal),
+  list: (hostId: HostId, signal?: AbortSignal): Promise<ContainerSummary[]> =>
+    get<ContainerSummary[]>(hostPath('/containers', hostId), signal),
 
-  get: (name: string, signal?: AbortSignal): Promise<Container> =>
-    get<Container>(`/containers/${name}`, signal),
+  get: (hostId: HostId, name: string, signal?: AbortSignal): Promise<Container> =>
+    get<Container>(hostPath(`/containers/${name}`, hostId), signal),
 
-  getState: (name: string, signal?: AbortSignal): Promise<ContainerState> =>
-    get<ContainerState>(`/containers/${name}/state`, signal),
+  getState: (hostId: HostId, name: string, signal?: AbortSignal): Promise<ContainerState> =>
+    get<ContainerState>(hostPath(`/containers/${name}/state`, hostId), signal),
 
-  create: (data: CreateContainerRequest): Promise<Container> =>
-    post<Container>('/containers', data),
+  create: (hostId: HostId, data: CreateContainerRequest): Promise<Container> =>
+    post<Container>(hostPath('/containers', hostId), data),
 
-  delete: (name: string): Promise<void> =>
-    del<void>(`/containers/${name}`),
+  delete: (hostId: HostId, name: string): Promise<void> =>
+    del<void>(hostPath(`/containers/${name}`, hostId)),
 
-  start: (name: string): Promise<void> =>
-    put<void>(`/containers/${name}/state`, {
+  start: (hostId: HostId, name: string): Promise<void> =>
+    put<void>(hostPath(`/containers/${name}/state`, hostId), {
       action: 'start',
       timeout: 30,
     } satisfies ContainerAction),
 
-  stop: (name: string, force = false): Promise<void> =>
-    put<void>(`/containers/${name}/state`, {
+  stop: (hostId: HostId, name: string, force = false): Promise<void> =>
+    put<void>(hostPath(`/containers/${name}/state`, hostId), {
       action: 'stop',
       timeout: 30,
       force,
     } satisfies ContainerAction),
 
-  restart: (name: string, force = false): Promise<void> =>
-    put<void>(`/containers/${name}/state`, {
+  restart: (hostId: HostId, name: string, force = false): Promise<void> =>
+    put<void>(hostPath(`/containers/${name}/state`, hostId), {
       action: 'restart',
       timeout: 30,
       force,
     } satisfies ContainerAction),
 
-  freeze: (name: string): Promise<void> =>
-    put<void>(`/containers/${name}/state`, {
+  freeze: (hostId: HostId, name: string): Promise<void> =>
+    put<void>(hostPath(`/containers/${name}/state`, hostId), {
       action: 'freeze',
     } satisfies ContainerAction),
 
-  unfreeze: (name: string): Promise<void> =>
-    put<void>(`/containers/${name}/state`, {
+  unfreeze: (hostId: HostId, name: string): Promise<void> =>
+    put<void>(hostPath(`/containers/${name}/state`, hostId), {
       action: 'unfreeze',
     } satisfies ContainerAction),
 
   // Snapshots
-  listSnapshots: (name: string, signal?: AbortSignal): Promise<Snapshot[]> =>
-    get<Snapshot[]>(`/containers/${name}/snapshots`, signal),
+  listSnapshots: (
+    hostId: HostId,
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<Snapshot[]> =>
+    get<Snapshot[]>(hostPath(`/containers/${name}/snapshots`, hostId), signal),
 
   createSnapshot: (
+    hostId: HostId,
     name: string,
     data: CreateSnapshotRequest,
   ): Promise<Snapshot> =>
-    post<Snapshot>(`/containers/${name}/snapshots`, data),
+    post<Snapshot>(hostPath(`/containers/${name}/snapshots`, hostId), data),
 
-  deleteSnapshot: (name: string, snapshotName: string): Promise<void> =>
-    del<void>(`/containers/${name}/snapshots/${snapshotName}`),
+  deleteSnapshot: (hostId: HostId, name: string, snapshotName: string): Promise<void> =>
+    del<void>(hostPath(`/containers/${name}/snapshots/${snapshotName}`, hostId)),
 
-  restoreSnapshot: (name: string, snapshotName: string): Promise<void> =>
-    post<void>(`/containers/${name}/snapshots/${snapshotName}/restore`),
+  restoreSnapshot: (hostId: HostId, name: string, snapshotName: string): Promise<void> =>
+    post<void>(hostPath(`/containers/${name}/snapshots/${snapshotName}/restore`, hostId)),
 
   // Exec
   exec: (
+    hostId: HostId,
     name: string,
     command: string[],
     interactive = false,
   ): Promise<{ operation: string; fds: Record<string, string> }> =>
-    post(`/containers/${name}/exec`, { command, interactive }),
+    post(hostPath(`/containers/${name}/exec`, hostId), { command, interactive }),
 }
 
 // ---------------------------------------------------------------------------
@@ -234,17 +256,17 @@ export const containers = {
 // ---------------------------------------------------------------------------
 
 export const images = {
-  list: (signal?: AbortSignal): Promise<ImageSummary[]> =>
-    get<ImageSummary[]>('/images', signal),
+  list: (hostId: HostId, signal?: AbortSignal): Promise<ImageSummary[]> =>
+    get<ImageSummary[]>(hostPath('/images', hostId), signal),
 
-  get: (fingerprint: string, signal?: AbortSignal): Promise<Image> =>
-    get<Image>(`/images/${fingerprint}`, signal),
+  get: (hostId: HostId, fingerprint: string, signal?: AbortSignal): Promise<Image> =>
+    get<Image>(hostPath(`/images/${fingerprint}`, hostId), signal),
 
-  delete: (fingerprint: string): Promise<void> =>
-    del<void>(`/images/${fingerprint}`),
+  delete: (hostId: HostId, fingerprint: string): Promise<void> =>
+    del<void>(hostPath(`/images/${fingerprint}`, hostId)),
 
-  refresh: (fingerprint: string): Promise<void> =>
-    post<void>(`/images/${fingerprint}/refresh`),
+  refresh: (hostId: HostId, fingerprint: string): Promise<void> =>
+    post<void>(hostPath(`/images/${fingerprint}/refresh`, hostId)),
 }
 
 // ---------------------------------------------------------------------------
@@ -252,20 +274,24 @@ export const images = {
 // ---------------------------------------------------------------------------
 
 export const networks = {
-  list: (signal?: AbortSignal): Promise<Network[]> =>
-    get<Network[]>('/networks', signal),
+  list: (hostId: HostId, signal?: AbortSignal): Promise<Network[]> =>
+    get<Network[]>(hostPath('/networks', hostId), signal),
 
-  get: (name: string, signal?: AbortSignal): Promise<Network> =>
-    get<Network>(`/networks/${name}`, signal),
+  get: (hostId: HostId, name: string, signal?: AbortSignal): Promise<Network> =>
+    get<Network>(hostPath(`/networks/${name}`, hostId), signal),
 
-  create: (data: CreateNetworkRequest): Promise<Network> =>
-    post<Network>('/networks', data),
+  create: (hostId: HostId, data: CreateNetworkRequest): Promise<Network> =>
+    post<Network>(hostPath('/networks', hostId), data),
 
-  update: (name: string, data: Partial<CreateNetworkRequest>): Promise<Network> =>
-    patch<Network>(`/networks/${name}`, data),
+  update: (
+    hostId: HostId,
+    name: string,
+    data: Partial<CreateNetworkRequest>,
+  ): Promise<Network> =>
+    patch<Network>(hostPath(`/networks/${name}`, hostId), data),
 
-  delete: (name: string): Promise<void> =>
-    del<void>(`/networks/${name}`),
+  delete: (hostId: HostId, name: string): Promise<void> =>
+    del<void>(hostPath(`/networks/${name}`, hostId)),
 }
 
 // ---------------------------------------------------------------------------
@@ -273,20 +299,23 @@ export const networks = {
 // ---------------------------------------------------------------------------
 
 export const storage = {
-  list: (signal?: AbortSignal): Promise<StoragePool[]> =>
-    get<StoragePool[]>('/storage', signal),
+  list: (hostId: HostId, signal?: AbortSignal): Promise<StoragePool[]> =>
+    get<StoragePool[]>(hostPath('/storage', hostId), signal),
 
-  get: (name: string, signal?: AbortSignal): Promise<StoragePool> =>
-    get<StoragePool>(`/storage/${name}`, signal),
+  get: (hostId: HostId, name: string, signal?: AbortSignal): Promise<StoragePool> =>
+    get<StoragePool>(hostPath(`/storage/${name}`, hostId), signal),
 
-  create: (data: {
-    name: string
-    driver: string
-    config?: Record<string, string>
-  }): Promise<StoragePool> => post<StoragePool>('/storage', data),
+  create: (
+    hostId: HostId,
+    data: {
+      name: string
+      driver: string
+      config?: Record<string, string>
+    },
+  ): Promise<StoragePool> => post<StoragePool>(hostPath('/storage', hostId), data),
 
-  delete: (name: string): Promise<void> =>
-    del<void>(`/storage/${name}`),
+  delete: (hostId: HostId, name: string): Promise<void> =>
+    del<void>(hostPath(`/storage/${name}`, hostId)),
 }
 
 // ---------------------------------------------------------------------------
@@ -311,13 +340,44 @@ export const users = {
 }
 
 // ---------------------------------------------------------------------------
-// Bootstrap (first-node LXD cluster init — admin-only)
+// Hosts
+// ---------------------------------------------------------------------------
+
+export const hosts = {
+  list: (signal?: AbortSignal): Promise<Host[]> =>
+    get<Host[]>('/hosts', signal),
+
+  /**
+   * Register a host. The backend probes the LXD REST API first and answers 502
+   * when the address is wrong, so a typo cannot be stored.
+   */
+  create: (data: HostCreate): Promise<Host> =>
+    post<Host>('/hosts', data),
+
+  remove: (hostId: number): Promise<void> =>
+    del<void>(`/hosts/${hostId}`),
+
+  health: (hostId: number, signal?: AbortSignal): Promise<HostHealth> =>
+    get<HostHealth>(`/hosts/${hostId}/health`, signal),
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap (local LXD onboarding — admin-only)
 // ---------------------------------------------------------------------------
 
 export const bootstrap = {
   status: (signal?: AbortSignal): Promise<BootstrapStatus> =>
     get<BootstrapStatus>('/bootstrap/status', signal),
 
+  /**
+   * Adopt an already-initialized daemon. This is the flow for a host that
+   * already runs containers: nothing is bootstrapped, a `hosts` row is created.
+   * Idempotent — a second call returns 200 with the existing host.
+   */
+  register: (data: BootstrapRegisterRequest = {}): Promise<BootstrapResult> =>
+    post<BootstrapResult>('/bootstrap/register', data),
+
+  /** Create the first node of a brand-new cluster. */
   cluster: (data: BootstrapRequest): Promise<BootstrapResult> =>
     post<BootstrapResult>('/bootstrap/cluster', data),
 }

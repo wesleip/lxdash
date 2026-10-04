@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
 
+from config import get_settings
 from models.host import ConnectionType, Host
 
 
@@ -21,68 +23,68 @@ def _make_host(host_id: int, is_active: bool = True) -> Host:
     )
 
 
+def _force_lxd_mock(monkeypatch: pytest.MonkeyPatch, enabled: bool) -> None:
+    """Force ``LXD_MOCK`` for host_service without touching the global settings."""
+    stub = SimpleNamespace(**{**vars(get_settings()), "LXD_MOCK": enabled})
+    monkeypatch.setattr("services.host_service.get_settings", lambda: stub)
+
+
 # ---------------------------------------------------------------------------
-# _resolve_default_host_id
+# resolve_host
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_default_with_zero_hosts(db_session: Any) -> None:
-    from dependencies import _resolve_default_host_id
+def test_resolve_host_with_zero_hosts(db_session: Any) -> None:
+    from services.host_service import NoHostRegisteredError, resolve_host
 
-    with pytest.raises(HTTPException) as excinfo:
-        _resolve_default_host_id(db_session)
-    assert excinfo.value.status_code == 422
-    assert "bootstrap" in excinfo.value.detail.lower()
+    with pytest.raises(NoHostRegisteredError) as excinfo:
+        resolve_host(db_session, None)
+    assert "register" in str(excinfo.value).lower()
 
 
-def test_resolve_default_with_single_active_host(db_session: Any) -> None:
-    from dependencies import _resolve_default_host_id
+def test_resolve_host_with_single_active_host(db_session: Any) -> None:
+    from services.host_service import resolve_host
 
     db_session.add(_make_host(7))
     db_session.commit()
 
-    assert _resolve_default_host_id(db_session) == 7
+    assert resolve_host(db_session, None).id == 7
 
 
-def test_resolve_default_with_inactive_hosts_only(db_session: Any) -> None:
-    from dependencies import _resolve_default_host_id
+def test_resolve_host_with_inactive_hosts_only(db_session: Any) -> None:
+    from services.host_service import NoHostRegisteredError, resolve_host
 
     db_session.add(_make_host(1, is_active=False))
     db_session.add(_make_host(2, is_active=False))
     db_session.commit()
 
-    with pytest.raises(HTTPException) as excinfo:
-        _resolve_default_host_id(db_session)
-    assert excinfo.value.status_code == 422
+    with pytest.raises(NoHostRegisteredError):
+        resolve_host(db_session, None)
 
 
-def test_resolve_default_with_multiple_active_hosts(db_session: Any) -> None:
-    from dependencies import _resolve_default_host_id
+def test_resolve_host_with_multiple_active_hosts(db_session: Any) -> None:
+    from services.host_service import AmbiguousHostError, resolve_host
 
     db_session.add(_make_host(1))
     db_session.add(_make_host(2))
     db_session.add(_make_host(3))
     db_session.commit()
 
-    with pytest.raises(HTTPException) as excinfo:
-        _resolve_default_host_id(db_session)
-    assert excinfo.value.status_code == 422
-    assert "3" in excinfo.value.detail  # count is reported
-    assert "Phase 3" in excinfo.value.detail
+    with pytest.raises(AmbiguousHostError) as excinfo:
+        resolve_host(db_session, None)
+    assert "3" in str(excinfo.value)  # count is reported
+    assert "host_id" in str(excinfo.value)
 
 
-def test_resolve_default_picks_lowest_id(db_session: Any) -> None:
-    from dependencies import _resolve_default_host_id
+def test_resolve_host_skips_inactive_hosts(db_session: Any) -> None:
+    from services.host_service import resolve_host
 
     db_session.add(_make_host(5))
-    db_session.add(_make_host(2))
+    db_session.add(_make_host(2, is_active=False))
     db_session.commit()
 
-    # Single-active case still uses the only one — but with two active hosts
-    # it would 422. Verify the inactive case returns the only active.
-    db_session.delete(db_session.get(Host, 2))
-    db_session.commit()
-    assert _resolve_default_host_id(db_session) == 5
+    # The inactive host must not turn a single-host deployment ambiguous.
+    assert resolve_host(db_session, None).id == 5
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +99,7 @@ async def test_get_lxd_client_uses_only_active_host_by_default(
 ) -> None:
     from dependencies import get_lxd_client
 
-    monkeypatch.setattr("dependencies.settings.LXD_MOCK", False)
+    _force_lxd_mock(monkeypatch, False)
 
     db_session.add(_make_host(42))
     db_session.commit()
@@ -116,11 +118,11 @@ async def test_get_lxd_client_raises_when_no_hosts(
 ) -> None:
     from dependencies import get_lxd_client
 
-    monkeypatch.setattr("dependencies.settings.LXD_MOCK", False)
+    _force_lxd_mock(monkeypatch, False)
 
     with pytest.raises(HTTPException) as excinfo:
         await get_lxd_client(db=db_session, current_user=None, host_id=None)
-    assert excinfo.value.status_code == 422
+    assert excinfo.value.status_code == 409
 
 
 @pytest.mark.asyncio
@@ -130,7 +132,7 @@ async def test_get_lxd_client_raises_when_multiple_hosts(
 ) -> None:
     from dependencies import get_lxd_client
 
-    monkeypatch.setattr("dependencies.settings.LXD_MOCK", False)
+    _force_lxd_mock(monkeypatch, False)
 
     db_session.add(_make_host(1))
     db_session.add(_make_host(2))
@@ -148,7 +150,7 @@ async def test_get_lxd_client_explicit_host_overrides_default(
 ) -> None:
     from dependencies import get_lxd_client
 
-    monkeypatch.setattr("dependencies.settings.LXD_MOCK", False)
+    _force_lxd_mock(monkeypatch, False)
 
     db_session.add(_make_host(1))
     db_session.add(_make_host(2))
@@ -169,7 +171,7 @@ async def test_get_lxd_client_404_for_inactive_explicit_host(
 ) -> None:
     from dependencies import get_lxd_client
 
-    monkeypatch.setattr("dependencies.settings.LXD_MOCK", False)
+    _force_lxd_mock(monkeypatch, False)
 
     db_session.add(_make_host(1, is_active=False))
     db_session.commit()

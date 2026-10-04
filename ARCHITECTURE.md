@@ -89,6 +89,43 @@ O `lxd_client.py` é o único ponto de contato com o `pylxd`. Nenhum router deve
 - Centraliza tratamento de erros do LXD
 - Permite trocar o transporte (Unix socket → TLS) sem tocar nos routers
 
+### Registro de hosts (host registry)
+
+Toda rota de recurso (containers, imagens, redes, storage) é servida a partir de uma linha em `hosts`. O registro é a única forma de o backend ganhar acesso a um daemon — nenhuma informação do LXD é replicada para o banco.
+
+```
+GET/POST/DELETE /hosts, GET /hosts/{id}/health
+POST /bootstrap/register   # adota o daemon local já inicializado
+POST /bootstrap/cluster    # cria o primeiro nó de um cluster novo
+```
+
+Resolução do host (`services/host_service.py::resolve_host`):
+
+| Situação | Comportamento |
+|---|---|
+| 0 hosts ativos | HTTP 409 — nada registrado ainda |
+| 1 host ativo | Servido sem `host_id` (implantação single-host) |
+| 2+ hosts ativos | HTTP 422 — o `?host_id=` é obrigatório |
+| `host_id` desconhecido/inativo | HTTP 404 |
+
+`LXD_MOCK=true` também passa por esse gate: em desenvolvimento o host sintético é registrado no boot, para que o caminho de resolução seja exercido igual à produção.
+
+O registro acontece em três lugares, todos idempotentes:
+
+1. **No boot** — `main._autoregister_local_host()` sonda o socket e cria/reativa a linha; falha é logada e ignorada (LXD ausente nunca impede o app de subir).
+2. **`POST /bootstrap/register`** — adota o daemon local já inicializado (não toca na configuração dele).
+3. **`POST /hosts`** — registra um host remoto (socket ou TLS) após comprovar que a API dele responde.
+
+Detecção de estado do daemon local (`services/lxd_probe.py`, `GET /1.0` + `GET /1.0/cluster`):
+
+| `cluster_state` | `state` | O que fazer |
+|---|---|---|
+| `absent` (404) | `uninitialized` | `POST /bootstrap/cluster` |
+| `forbidden` (403) | `untrusted` | `lxc config trust add` no host |
+| `present` (200) | `initialized` | `POST /bootstrap/register` ou `/hosts` |
+
+`pylxd` não serve para essa detecção: um daemon sem cluster não tem certificado de cliente para apresentar. Por isso `lxd_probe.py` fala HTTP direto com `httpx` e é o único módulo autorizado a hacerlo — a mesma restrição que vale para o `pylxd` vale para o wire protocol.
+
 ### Fluxo de uma requisição típica
 
 ```

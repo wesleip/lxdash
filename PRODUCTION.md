@@ -95,6 +95,29 @@ Este documento enumera tudo o que precisa existir/mudar para ir para produção.
 6. Validar: `curl https://dominio/health` → `{"status":"ok", ...}` e login no frontend.
 7. Conferir que o painel **mostra os containers LXD reais da maquina** (não os mockados).
 
+### 4.1 "No LXD hosts registered"
+
+Toda rota de recurso exige uma linha em `hosts`. O backend registra o daemon local sozinho no boot; se a tela mostrar esse estado (HTTP 409), o registro não aconteceu — quase sempre é o socket.
+
+Verifique nesta ordem:
+
+1. `GET /bootstrap/status` (admin). `state` diz o que aconteceu:
+   - `unreachable` — o socket não existe/não é legível; a mensagem nomeia UID/GID.
+   - `untrusted` — cluster existe, rode `lxc config trust add /var/snap/lxd/common/lxd/unix.socket` no host.
+   - `initialized` com `host_id: null` — o daemon responde, só falta registrar: use **LXD hosts → Register this daemon**.
+2. Socket montado? `docker compose exec backend ls -l /var/snap/lxd/common/lxd/unix.socket`. LXD instalado via apt (não snap) usa `/var/lib/lxd/unix.socket` — ajuste `LXD_SOCKET_PATH`.
+3. GID do grupo `lxd` da maquina != valor em `.env` (`LXD_GID`). Confira com `getent group lxd | cut -d: -f3`. O erro de permissão nas logs mostra os GIDs esperados vs. atuais; não precisa de `docker exec`.
+4. Logs no boot: `host.local_registered` (sucesso), `host.local_skipped` (sem daemon), `host.autoregister_failed` (erro inesperado).
+
+Registro manual, se necessário:
+
+```bash
+# adota o daemon local ja inicializado (implantacao single-host)
+curl -X POST https://dominio/api/bootstrap/register -H "Authorization: Bearer $TOKEN"
+```
+
+Hosts remacos entram pela tela **LXD hosts** (`POST /api/hosts`), que exige admin e só grava a linha depois de comprovar que a API do daemon responde.
+
 ---
 
 ## 5. Backup e recuperação

@@ -1,25 +1,28 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, AlertCircle, Trash2, RefreshCw } from 'lucide-react'
+import { Trash2, RefreshCw } from 'lucide-react'
 import { images as imagesApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { LoadingState, ResourceError } from '@/components/common/ResourceState'
+import { useActiveHostId } from '@/lib/hooks/useHosts'
 import { formatBytes, formatRelativeTime } from '@/lib/utils'
 
 export default function Images() {
   const qc = useQueryClient()
+  const hostId = useActiveHostId()
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['images'],
-    queryFn: ({ signal }) => imagesApi.list(signal),
+    queryKey: ['images', hostId],
+    queryFn: ({ signal }) => imagesApi.list(hostId, signal),
   })
 
   const deleteMut = useMutation({
-    mutationFn: (fingerprint: string) => imagesApi.delete(fingerprint),
+    mutationFn: (fingerprint: string) => imagesApi.delete(hostId, fingerprint),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['images'] }),
   })
 
   const refreshMut = useMutation({
-    mutationFn: (fingerprint: string) => imagesApi.refresh(fingerprint),
+    mutationFn: (fingerprint: string) => imagesApi.refresh(hostId, fingerprint),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['images'] }),
   })
 
@@ -33,19 +36,9 @@ export default function Images() {
       </div>
 
       <div className="rounded-lg border border-border bg-card overflow-hidden">
-        {isLoading && (
-          <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading images…</span>
-          </div>
-        )}
+        {isLoading && <LoadingState label="Loading images…" />}
 
-        {isError && (
-          <div className="flex items-center justify-center py-12 gap-2 text-destructive">
-            <AlertCircle className="h-5 w-5" />
-            <span className="text-sm">{(error as Error).message}</span>
-          </div>
-        )}
+        {isError && <ResourceError error={error} />}
 
         {!isLoading && !isError && data && (
           <div className="overflow-x-auto">
