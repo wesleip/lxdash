@@ -81,6 +81,11 @@ class _FakeContainer:
     type: str = "container"
     profiles: list[str] = field(default_factory=lambda: ["default"])
     config: dict[str, Any] = field(default_factory=dict)
+    # Mirror of pylxd's `expanded_config` — the resolved view of the
+    # instance config that LXD fills with `image.*` keys when the instance
+    # is created from an image. Routers read image labels from here, not
+    # from `config` (the user-editable override map).
+    expanded_config: dict[str, Any] = field(default_factory=dict)
     architecture: str = "x86_64"
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     last_used_at: str | None = None
@@ -161,11 +166,32 @@ class _FakeStoragePool:
 
 def _seed_containers() -> dict[str, _FakeContainer]:
     return {
+        "archlinux": _FakeContainer(
+            name="archlinux",
+            status="Running",
+            status_code=103,
+            expanded_config={
+                "image.architecture": "x86_64",
+                "image.description": "Archlinux current (20260401)",
+                "image.os": "Archlinux",
+                "image.release": "rolling",
+                "image.serial": "20260401",
+                "image.type": "squashfs",
+                "image.version": "20260401",
+            },
+        ),
         "web-prod": _FakeContainer(
             name="web-prod",
             status="Running",
             status_code=103,
             config={"limits.cpu": "2", "limits.memory": "512MB"},
+            expanded_config={
+                "image.architecture": "x86_64",
+                "image.description": "Ubuntu 24.04 LTS (Noble Numbat)",
+                "image.os": "Ubuntu",
+                "image.release": "noble",
+                "image.version": "24.04",
+            },
             snapshots=[
                 _FakeSnapshot(name="snap0", created_at="2024-05-01T10:00:00+00:00"),
             ],
@@ -175,9 +201,35 @@ def _seed_containers() -> dict[str, _FakeContainer]:
             status="Running",
             status_code=103,
             config={"limits.cpu": "1", "limits.memory": "1GB"},
+            expanded_config={
+                "image.architecture": "x86_64",
+                "image.description": "Debian 12 (Bookworm)",
+                "image.os": "Debian",
+                "image.release": "bookworm",
+            },
         ),
-        "dev-env": _FakeContainer(name="dev-env", status="Stopped", status_code=102),
-        "test-runner": _FakeContainer(name="test-runner", status="Stopped", status_code=102),
+        "dev-env": _FakeContainer(
+            name="dev-env",
+            status="Stopped",
+            status_code=102,
+            expanded_config={
+                "image.architecture": "x86_64",
+                "image.description": "Alpine 3.19",
+                "image.os": "Alpine",
+                "image.release": "3.19",
+            },
+        ),
+        "test-runner": _FakeContainer(
+            name="test-runner",
+            status="Stopped",
+            status_code=102,
+            expanded_config={
+                "image.architecture": "x86_64",
+                "image.description": "Ubuntu 22.04 LTS (Jammy Jellyfish)",
+                "image.os": "Ubuntu",
+                "image.release": "jammy",
+            },
+        ),
     }
 
 
@@ -281,12 +333,40 @@ class MockLXDClient:
 
     async def create_container(self, config: dict[str, Any], wait: bool = True) -> _FakeContainer:
         name = config["name"]
+        source = config.get("source") or {}
+        # LXD stamps `image.description`/`image.os`/etc. onto the instance
+        # expanded_config at create time. The mock looks up the seeded image
+        # by alias so newly created containers also report a sensible
+        # label on the panel.
+        alias = source.get("alias") if source.get("type") == "image" else None
+        image_alias = None
+        image_os = None
+        image_description = None
+        if alias:
+            for img in self._images.values():
+                for entry in img.aliases:
+                    if entry.get("name") == alias:
+                        image_alias = alias
+                        image_os = img.properties.get("os") or alias.split("/", 1)[0]
+                        image_description = img.properties.get("description") or alias
+                        break
+                if image_alias:
+                    break
+        expanded_config: dict[str, Any] = {}
+        if image_description:
+            expanded_config["image.description"] = image_description
+        if image_os:
+            expanded_config["image.os"] = image_os
+        if image_alias:
+            expanded_config["image.release"] = image_alias
+
         c = _FakeContainer(
             name=name,
             status="Stopped",
             status_code=102,
             profiles=config.get("profiles", ["default"]),
             config=config.get("config", {}),
+            expanded_config=expanded_config,
         )
         self._containers[name] = c
         logger.info("mock.container_created", name=name)

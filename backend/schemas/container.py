@@ -145,6 +145,27 @@ class ContainerResponse(BaseModel):
     stats: ContainerStats | None = None
 
 
+class ContainerSummary(BaseModel):
+    """Trimmed-down view of an instance for list responses.
+
+    The container list hits the panel on every dashboard tick (every 5s) and
+    powers the ``/containers`` table — keeping the payload small matters.
+    ``image`` is the human label LXD writes to ``image.description`` when the
+    instance is created from an image (e.g. *"Ubuntu 22.04 LTS"*), and the
+    ``ipv4``/``ipv6`` fields come from the first global-scoped address of any
+    interface reported by ``GET /1.0/instances/{name}/state``.
+    """
+
+    name: str
+    status: str
+    type: str  # "container" | "virtual-machine"
+    image: str = ""
+    ipv4: str | None = None
+    ipv6: str | None = None
+    created_at: str | None = None
+    last_used_at: str | None = None
+
+
 class SnapshotCreateRequest(BaseModel):
     name: str = Field(
         ...,
