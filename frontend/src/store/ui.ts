@@ -9,9 +9,10 @@ interface UiState {
   toggleSidebar: () => void
   setSidebarOpen: (open: boolean) => void
 
-  // Active LXD host (for multi-host support)
-  activeHostId: string | null
-  setActiveHostId: (id: string | null) => void
+  // Active LXD host (for multi-host support).
+  // `null` means "let the backend pick the single registered host".
+  activeHostId: number | null
+  setActiveHostId: (id: number | null) => void
 
   // Theme
   theme: Theme

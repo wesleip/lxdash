@@ -5,11 +5,15 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { ArrowLeft } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
+import { useAuthStore } from '@/store/auth'
+import { useActiveHostId } from '@/lib/hooks/useHosts'
 
 const WS_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
 
 export default function Terminal() {
   const { name } = useParams<{ name: string }>()
+  const token = useAuthStore((s) => s.token)
+  const hostId = useActiveHostId()
   const containerRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -18,7 +22,13 @@ export default function Terminal() {
 
   const connectWebSocket = useCallback(
     (term: XTerm, fitAddon: FitAddon) => {
-      const wsUrl = `${WS_BASE}/ws/containers/${containerName}/console`
+      // Browsers cannot set headers on a WebSocket upgrade, so the JWT rides
+      // in the query string — the backend closes with 1008 when it is missing.
+      const params = new URLSearchParams({ token: token ?? '' })
+      if (hostId !== null) {
+        params.set('host_id', String(hostId))
+      }
+      const wsUrl = `${WS_BASE}/ws/containers/${encodeURIComponent(containerName)}/console?${params}`
       term.writeln(`\x1b[33mConnecting to ${containerName}…\x1b[0m`)
 
       const ws = new WebSocket(wsUrl)
@@ -76,7 +86,7 @@ export default function Terminal() {
 
       return ws
     },
-    [containerName],
+    [containerName, hostId, token],
   )
 
   useEffect(() => {

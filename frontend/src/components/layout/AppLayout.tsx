@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import { Sun, Moon, Menu } from 'lucide-react'
 import { Sidebar } from './Sidebar'
+import { HostIndicator } from './HostIndicator'
 import { useUiStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
 
@@ -24,7 +25,9 @@ export function AppLayout() {
             <Menu className="h-5 w-5" />
           </button>
 
-          <div className="flex-1" />
+          <div className="flex-1 flex justify-end">
+            <HostIndicator />
+          </div>
 
           {/* Theme toggle */}
           <button

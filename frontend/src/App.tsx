@@ -13,6 +13,7 @@ const Terminal = lazy(() => import('@/pages/Terminal'))
 const Images = lazy(() => import('@/pages/Images'))
 const Networks = lazy(() => import('@/pages/Networks'))
 const Storage = lazy(() => import('@/pages/Storage'))
+const Hosts = lazy(() => import('@/pages/Hosts'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const Users = lazy(() => import('@/pages/Users'))
 const Bootstrap = lazy(() => import('@/pages/Bootstrap'))
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="images" element={<Images />} />
             <Route path="networks" element={<Networks />} />
             <Route path="storage" element={<Storage />} />
+            <Route path="hosts" element={<Hosts />} />
             <Route path="bootstrap" element={<Bootstrap />} />
             <Route path="settings" element={<Settings />} />
             <Route path="users" element={<Users />} />

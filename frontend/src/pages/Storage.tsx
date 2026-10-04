@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, AlertCircle, Database } from 'lucide-react'
+import { Database } from 'lucide-react'
 import { storage as storageApi } from '@/lib/api'
 import type { StoragePool } from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { LoadingState, ResourceError } from '@/components/common/ResourceState'
+import { useActiveHostId } from '@/lib/hooks/useHosts'
 import { formatBytes } from '@/lib/utils'
 
 function DriverBadge({ driver }: { driver: StoragePool['driver'] }) {
@@ -37,9 +39,11 @@ function UsageBar({ used, total }: { used: number; total: number }) {
 }
 
 export default function Storage() {
+  const hostId = useActiveHostId()
+
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['storage'],
-    queryFn: ({ signal }) => storageApi.list(signal),
+    queryKey: ['storage', hostId],
+    queryFn: ({ signal }) => storageApi.list(hostId, signal),
   })
 
   return (
@@ -49,19 +53,9 @@ export default function Storage() {
         <p className="text-muted-foreground text-sm">LXD storage pools and their utilisation.</p>
       </div>
 
-      {isLoading && (
-        <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading storage pools…</span>
-        </div>
-      )}
+      {isLoading && <LoadingState label="Loading storage pools…" />}
 
-      {isError && (
-        <div className="flex items-center justify-center py-12 gap-2 text-destructive">
-          <AlertCircle className="h-5 w-5" />
-          <span className="text-sm">{(error as Error).message}</span>
-        </div>
-      )}
+      {isError && <ResourceError error={error} />}
 
       {!isLoading && !isError && data && data.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">

@@ -10,7 +10,6 @@ import {
   Camera,
   Trash2,
   Loader2,
-  AlertCircle,
 } from 'lucide-react'
 import { containers } from '@/lib/api'
 import type { ContainerStatus } from '@/types/api'
@@ -18,6 +17,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { LoadingState, ResourceError } from '@/components/common/ResourceState'
+import { useActiveHostId } from '@/lib/hooks/useHosts'
 import { cn, formatBytes, formatRelativeTime } from '@/lib/utils'
 
 function statusVariant(
@@ -45,52 +46,66 @@ export default function ContainerDetail() {
   const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const hostId = useActiveHostId()
   const [activeTab, setActiveTab] = useState('overview')
   const [snapshotName, setSnapshotName] = useState('')
 
   const containerName = name!
 
   const containerQuery = useQuery({
-    queryKey: ['containers', containerName],
-    queryFn: ({ signal }) => containers.get(containerName, signal),
+    queryKey: ['containers', hostId, containerName],
+    queryFn: ({ signal }) => containers.get(hostId, containerName, signal),
   })
 
   const stateQuery = useQuery({
-    queryKey: ['containers', containerName, 'state'],
-    queryFn: ({ signal }) => containers.getState(containerName, signal),
+    queryKey: ['containers', hostId, containerName, 'state'],
+    queryFn: ({ signal }) => containers.getState(hostId, containerName, signal),
     refetchInterval: 5000,
     enabled: containerQuery.data?.status === 'Running',
   })
 
   const snapshotsQuery = useQuery({
-    queryKey: ['containers', containerName, 'snapshots'],
-    queryFn: ({ signal }) => containers.listSnapshots(containerName, signal),
+    queryKey: ['containers', hostId, containerName, 'snapshots'],
+    queryFn: ({ signal }) => containers.listSnapshots(hostId, containerName, signal),
     enabled: activeTab === 'snapshots',
   })
 
   const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['containers', containerName] })
+    void qc.invalidateQueries({ queryKey: ['containers', hostId, containerName] })
     void qc.invalidateQueries({ queryKey: ['containers'] })
   }
 
-  const startMut = useMutation({ mutationFn: () => containers.start(containerName), onSettled: invalidate })
-  const stopMut = useMutation({ mutationFn: () => containers.stop(containerName), onSettled: invalidate })
-  const restartMut = useMutation({ mutationFn: () => containers.restart(containerName), onSettled: invalidate })
+  const startMut = useMutation({
+    mutationFn: () => containers.start(hostId, containerName),
+    onSettled: invalidate,
+  })
+  const stopMut = useMutation({
+    mutationFn: () => containers.stop(hostId, containerName),
+    onSettled: invalidate,
+  })
+  const restartMut = useMutation({
+    mutationFn: () => containers.restart(hostId, containerName),
+    onSettled: invalidate,
+  })
   const deleteMut = useMutation({
-    mutationFn: () => containers.delete(containerName),
+    mutationFn: () => containers.delete(hostId, containerName),
     onSuccess: () => navigate('/'),
   })
   const snapshotMut = useMutation({
-    mutationFn: () => containers.createSnapshot(containerName, { name: snapshotName }),
+    mutationFn: () => containers.createSnapshot(hostId, containerName, { name: snapshotName }),
     onSuccess: () => {
       setSnapshotName('')
-      void qc.invalidateQueries({ queryKey: ['containers', containerName, 'snapshots'] })
+      void qc.invalidateQueries({
+        queryKey: ['containers', hostId, containerName, 'snapshots'],
+      })
     },
   })
   const deleteSnapshotMut = useMutation({
-    mutationFn: (snap: string) => containers.deleteSnapshot(containerName, snap),
+    mutationFn: (snap: string) => containers.deleteSnapshot(hostId, containerName, snap),
     onSettled: () =>
-      qc.invalidateQueries({ queryKey: ['containers', containerName, 'snapshots'] }),
+      qc.invalidateQueries({
+        queryKey: ['containers', hostId, containerName, 'snapshots'],
+      }),
   })
 
   const container = containerQuery.data
@@ -99,21 +114,15 @@ export default function ContainerDetail() {
   const isBusy = startMut.isPending || stopMut.isPending || restartMut.isPending || deleteMut.isPending
 
   if (containerQuery.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20 gap-2 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        <span>Loading…</span>
-      </div>
-    )
+    return <LoadingState label="Loading container…" />
   }
 
-  if (containerQuery.isError || !container) {
-    return (
-      <div className="flex items-center justify-center py-20 gap-2 text-destructive">
-        <AlertCircle className="h-5 w-5" />
-        <span>{(containerQuery.error as Error | null)?.message ?? 'Container not found'}</span>
-      </div>
-    )
+  if (containerQuery.isError) {
+    return <ResourceError error={containerQuery.error} />
+  }
+
+  if (!container) {
+    return <ResourceError error={new Error(`Container "${containerName}" was not found.`)} />
   }
 
   return (
