@@ -94,6 +94,27 @@ def test_create_container_rejects_an_invalid_name(client, db_session, admin_user
     assert resp.status_code == 422
 
 
+def test_start_and_stop_container(client, db_session, admin_user):
+    """The routes the frontend start/stop/restart buttons call."""
+    from main import app
+
+    _make_host(db_session)
+    _auth(app, admin_user)
+    try:
+        started = client.post("/containers/web-prod/start", json={"timeout": 30})
+        assert started.status_code == 200, started.text
+
+        stopped = client.post("/containers/web-prod/stop", json={"timeout": 30})
+        assert stopped.status_code == 200, stopped.text
+    finally:
+        app.dependency_overrides.clear()
+        from services.lxd_client_mock import MockLXDClient
+
+        # Restore the seeded container's original running state.
+        MockLXDClient._containers["web-prod"].status = "Running"
+        MockLXDClient._containers["web-prod"].status_code = 103
+
+
 def test_unknown_container_is_404(client, db_session, admin_user):
     from main import app
 
