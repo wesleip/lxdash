@@ -19,6 +19,8 @@ from schemas.container import (
     ContainerStateInterface,
     ContainerStateResponse,
     ContainerStats,
+    SnapshotCreateRequest,
+    SnapshotResponse,
 )
 from services.audit_service import record_and_notify
 from services.lxd_client import LXDClientError
@@ -407,3 +409,163 @@ async def restart_container(
         status="success",
     )
     return _container_to_response(container)
+
+
+# ---------------------------------------------------------------------------
+# GET /containers/{name}/snapshots
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{name}/snapshots", response_model=list[SnapshotResponse])
+async def list_snapshots(
+    name: str,
+    lxd: LXDDep,
+    current_user: CurrentUser,
+) -> list[SnapshotResponse]:
+    """List the snapshots taken for a container."""
+    try:
+        return await lxd.list_snapshots(name)
+    except LXDClientError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# POST /containers/{name}/snapshots
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{name}/snapshots",
+    response_model=SnapshotResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_snapshot(
+    name: str,
+    body: SnapshotCreateRequest,
+    lxd: LXDDep,
+    db: DBDep,
+    current_user: CurrentUser,
+) -> SnapshotResponse:
+    """Take a snapshot of a container."""
+    try:
+        snapshot = await lxd.create_snapshot(
+            name,
+            body.name,
+            stateful=body.stateful,
+            expires_at=body.expires_at,
+        )
+    except LXDClientError as exc:
+        await record_and_notify(
+            db,
+            user=current_user,
+            action="snapshot.create",
+            resource_type="container",
+            resource_name=f"{name}/{body.name}",
+            host_id=lxd.host_id,
+            status="failure",
+            detail=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    await record_and_notify(
+        db,
+        user=current_user,
+        action="snapshot.create",
+        resource_type="container",
+        resource_name=f"{name}/{body.name}",
+        host_id=lxd.host_id,
+        status="success",
+    )
+    return snapshot
+
+
+# ---------------------------------------------------------------------------
+# DELETE /containers/{name}/snapshots/{snapshot_name}
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/{name}/snapshots/{snapshot_name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+async def delete_snapshot(
+    name: str,
+    snapshot_name: str,
+    lxd: LXDDep,
+    db: DBDep,
+    current_user: CurrentUser,
+) -> None:
+    """Delete one snapshot of a container."""
+    try:
+        await lxd.delete_snapshot(name, snapshot_name)
+    except LXDClientError as exc:
+        await record_and_notify(
+            db,
+            user=current_user,
+            action="snapshot.delete",
+            resource_type="container",
+            resource_name=f"{name}/{snapshot_name}",
+            host_id=lxd.host_id,
+            status="failure",
+            detail=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    await record_and_notify(
+        db,
+        user=current_user,
+        action="snapshot.delete",
+        resource_type="container",
+        resource_name=f"{name}/{snapshot_name}",
+        host_id=lxd.host_id,
+        status="success",
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /containers/{name}/snapshots/{snapshot_name}/restore
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{name}/snapshots/{snapshot_name}/restore",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+async def restore_snapshot(
+    name: str,
+    snapshot_name: str,
+    lxd: LXDDep,
+    db: DBDep,
+    current_user: CurrentUser,
+) -> None:
+    """Roll a container back to a snapshot.
+
+    LXD refuses a non-stateful restore while the instance is running, which
+    surfaces here as 502 with the daemon's own message in `detail`.
+    """
+    try:
+        await lxd.restore_snapshot(name, snapshot_name)
+    except LXDClientError as exc:
+        await record_and_notify(
+            db,
+            user=current_user,
+            action="snapshot.restore",
+            resource_type="container",
+            resource_name=f"{name}/{snapshot_name}",
+            host_id=lxd.host_id,
+            status="failure",
+            detail=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    await record_and_notify(
+        db,
+        user=current_user,
+        action="snapshot.restore",
+        resource_type="container",
+        resource_name=f"{name}/{snapshot_name}",
+        host_id=lxd.host_id,
+        status="success",
+    )

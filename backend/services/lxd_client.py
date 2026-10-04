@@ -21,6 +21,23 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
+def _snapshot_to_dict(meta: dict[str, Any]) -> dict[str, Any]:
+    """Normalise LXD snapshot metadata for the API layer.
+
+    LXD namespaces snapshot names as "container/snapshot" and reports an unset
+    expiry as the zero time — neither belongs in a response.
+    """
+    expires_at = meta.get("expires_at")
+    if not expires_at or expires_at.startswith(("0001-01-01", "1970-01-01")):
+        expires_at = None
+    return {
+        "name": meta.get("name", "").split("/")[-1],
+        "created_at": meta.get("created_at") or "",
+        "expires_at": expires_at,
+        "stateful": bool(meta.get("stateful", False)),
+    }
+
+
 class LXDClientError(Exception):
     """Raised when a pylxd operation fails in a known way."""
 
@@ -174,6 +191,79 @@ class LXDClient:
     async def get_container_state(self, name: str) -> Any:
         container = await self.get_container(name)
         return await asyncio.to_thread(container.state)
+
+    # ------------------------------------------------------------------
+    # Snapshots
+    # ------------------------------------------------------------------
+
+    async def list_snapshots(self, container_name: str) -> list[dict[str, Any]]:
+        container = await self.get_container(container_name)
+
+        def _list() -> list[dict[str, Any]]:
+            response = container.api.snapshots.get(params={"recursion": 1})
+            return [_snapshot_to_dict(meta) for meta in response.json()["metadata"]]
+
+        try:
+            return await asyncio.to_thread(_list)
+        except pylxd.exceptions.LXDAPIException as exc:
+            raise LXDClientError(f"Failed to list snapshots of '{container_name}': {exc}") from exc
+
+    async def create_snapshot(
+        self,
+        container_name: str,
+        snapshot_name: str,
+        stateful: bool = False,
+        expires_at: str | None = None,
+        wait: bool = True,
+    ) -> dict[str, Any]:
+        container = await self.get_container(container_name)
+
+        def _create() -> dict[str, Any]:
+            payload: dict[str, Any] = {"name": snapshot_name, "stateful": stateful}
+            if expires_at:
+                payload["expires_at"] = expires_at
+            response = container.api.snapshots.post(json=payload)
+            operation = response.json().get("operation")
+            if wait and operation:
+                self._client.operations.wait_for_operation(operation)
+            meta = container.api.snapshots[snapshot_name].get().json()["metadata"]
+            return _snapshot_to_dict(meta)
+
+        try:
+            return await asyncio.to_thread(_create)
+        except pylxd.exceptions.LXDAPIException as exc:
+            raise LXDClientError(
+                f"Failed to create snapshot '{container_name}/{snapshot_name}': {exc}"
+            ) from exc
+
+    async def delete_snapshot(
+        self, container_name: str, snapshot_name: str, wait: bool = True
+    ) -> None:
+        container = await self.get_container(container_name)
+
+        def _delete() -> None:
+            response = container.api.snapshots[snapshot_name].delete()
+            operation = response.json().get("operation")
+            if wait and operation:
+                self._client.operations.wait_for_operation(operation)
+
+        try:
+            await asyncio.to_thread(_delete)
+        except pylxd.exceptions.LXDAPIException as exc:
+            raise LXDClientError(
+                f"Failed to delete snapshot '{container_name}/{snapshot_name}': {exc}"
+            ) from exc
+
+    async def restore_snapshot(
+        self, container_name: str, snapshot_name: str, wait: bool = True
+    ) -> None:
+        container = await self.get_container(container_name)
+        try:
+            await asyncio.to_thread(container.restore_snapshot, snapshot_name, wait=wait)
+        except pylxd.exceptions.LXDAPIException as exc:
+            raise LXDClientError(
+                f"Failed to restore snapshot '{container_name}/{snapshot_name}': {exc}"
+            ) from exc
 
     # ------------------------------------------------------------------
     # Images

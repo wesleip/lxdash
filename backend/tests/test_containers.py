@@ -168,3 +168,67 @@ def test_unknown_container_is_404(client, db_session, admin_user):
 def test_list_requires_authentication(client):
     resp = client.get("/containers")
     assert resp.status_code == 401
+
+
+def test_snapshots_list_create_restore_and_delete(client, db_session, admin_user):
+    """The four snapshot routes behind the Snapshots tab."""
+    from main import app
+    from services.lxd_client_mock import MockLXDClient
+
+    _make_host(db_session)
+    _auth(app, admin_user)
+    try:
+        listed = client.get("/containers/web-prod/snapshots")
+        assert listed.status_code == 200, listed.text
+        assert {s["name"] for s in listed.json()} == {"snap0"}
+        assert listed.json()[0]["created_at"]
+
+        created = client.post("/containers/web-prod/snapshots", json={"name": "nightly"})
+        assert created.status_code == 201, created.text
+        assert created.json()["name"] == "nightly"
+        assert created.json()["expires_at"] is None
+
+        restored = client.post("/containers/web-prod/snapshots/snap0/restore")
+        assert restored.status_code == 204, restored.text
+
+        deleted = client.delete("/containers/web-prod/snapshots/nightly")
+        assert deleted.status_code == 204, deleted.text
+
+        listed_again = client.get("/containers/web-prod/snapshots")
+        assert {s["name"] for s in listed_again.json()} == {"snap0"}
+    finally:
+        app.dependency_overrides.clear()
+        # MockLXDClient keeps class-level state across tests: drop the snapshot
+        # this test created and restore the seeded one if it was deleted.
+        snaps = MockLXDClient._containers["web-prod"].snapshots
+        snaps[:] = [s for s in snaps if s.name == "snap0"]
+        if not snaps:
+            from services.lxd_client_mock import _FakeSnapshot
+
+            snaps.append(_FakeSnapshot(name="snap0", created_at="2024-05-01T10:00:00+00:00"))
+
+
+def test_snapshot_name_is_validated(client, db_session, admin_user):
+    from main import app
+
+    _make_host(db_session)
+    _auth(app, admin_user)
+    try:
+        resp = client.post("/containers/web-prod/snapshots", json={"name": "bad name!"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 422
+
+
+def test_snapshots_of_an_unknown_container_are_404(client, db_session, admin_user):
+    from main import app
+
+    _make_host(db_session)
+    _auth(app, admin_user)
+    try:
+        resp = client.get("/containers/no-such-container/snapshots")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 404

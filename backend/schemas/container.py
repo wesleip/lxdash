@@ -143,3 +143,22 @@ class ContainerResponse(BaseModel):
     location: str = ""  # cluster member name
     # Populated only when fetching a single container with ?stats=true
     stats: ContainerStats | None = None
+
+
+class SnapshotCreateRequest(BaseModel):
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9\-]*$",
+        description="Snapshot name, without the container prefix",
+    )
+    stateful: bool = False
+    expires_at: str | None = Field(default=None, description="RFC3339 expiry, or null for never")
+
+
+class SnapshotResponse(BaseModel):
+    name: str
+    created_at: str = ""
+    expires_at: str | None = None
+    stateful: bool = False
