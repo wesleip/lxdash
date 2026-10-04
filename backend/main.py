@@ -18,12 +18,25 @@ import models.audit_log
 import models.host
 import models.user  # noqa: F401
 from config import get_settings
+from database import SessionLocal
 
 # ---------------------------------------------------------------------------
 # Import routers
 # ---------------------------------------------------------------------------
-from routers import auth, bootstrap, console, containers, images, metrics, networks, storage, users
+from routers import (
+    auth,
+    bootstrap,
+    console,
+    containers,
+    hosts,
+    images,
+    metrics,
+    networks,
+    storage,
+    users,
+)
 from services.discord_notifier import get_discord_notifier
+from services.host_service import ensure_local_host, ensure_mock_host
 
 settings = get_settings()
 
@@ -92,10 +105,32 @@ logger = structlog.get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Tables are created via Alembic (entrypoint.sh runs `alembic upgrade head`).
     await get_discord_notifier().start()
+    await _autoregister_local_host()
     logger.info("startup", env=settings.APP_ENV)
     yield
     await get_discord_notifier().stop()
     logger.info("shutdown")
+
+
+async def _autoregister_local_host() -> None:
+    """Adopt the local LXD daemon on boot so a fresh install is usable at once.
+
+    Every container/image/network/storage endpoint delegates to a ``hosts``
+    row; without one the whole panel is dead on arrival, even on a host whose
+    LXD is fully configured. Registration is idempotent, and any failure here
+    (no daemon, socket not mounted, wrong GID) is logged and swallowed — a
+    missing LXD must never stop the app from booting.
+    """
+    db = SessionLocal()
+    try:
+        if settings.LXD_MOCK:
+            ensure_mock_host(db)
+        else:
+            await ensure_local_host(db, settings.LXD_SOCKET_PATH)
+    except Exception as exc:
+        logger.warning("host.autoregister_failed", error=str(exc))
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +184,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(bootstrap.router)
+app.include_router(hosts.router)
 app.include_router(containers.router)
 app.include_router(images.router)
 app.include_router(networks.router)

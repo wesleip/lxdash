@@ -1,11 +1,11 @@
 """First-node LXD cluster bootstrap.
 
-Talks to the LXD daemon directly over the Unix socket via ``httpx`` while
-the cluster is in the *uninitialized* or *untrusted* state — there is no
-client certificate yet, so ``pylxd`` (and our ``LXDClient`` wrapper) cannot
-be used here. This is the only legitimate exception to the
-"only lxd_client.py imports pylxd" rule: pylxd does not even support the
-uninitialized state.
+Talks to the LXD daemon over the Unix socket while the cluster is in the
+*uninitialized* or *untrusted* state — there is no client certificate yet, so
+``pylxd`` (and our ``LXDClient`` wrapper) cannot be used here. The wire
+protocol itself lives in :mod:`services.lxd_probe`; this module only maps the
+probed cluster state onto the bootstrap state machine and drives
+``POST /1.0/cluster``.
 
 State machine
 -------------
@@ -19,24 +19,28 @@ State machine
     add the cert on the host with ``lxc config trust add``.
 
 ``initialized``
-    Cluster is set up and a host record is registered in our DB. Future
-    connections use the wrapped ``LXDClient``.
+    Cluster is set up (standalone or clustered). Nothing needs to be
+    bootstrapped; the daemon only has to be *registered* as a host, which is
+    what ``POST /bootstrap/register`` does.
 """
 
 from __future__ import annotations
 
-import os
-import stat
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
-import httpx
 import structlog
 
 from config import get_settings
+from services.lxd_probe import (
+    DEFAULT_TIMEOUT_SECONDS,
+    LXDProbeError,
+    ensure_socket_accessible,
+    fetch_server_info,
+    post_cluster_preseed,
+)
 
 logger = structlog.get_logger(__name__)
-
 
 BootstrapState = Literal["uninitialized", "untrusted", "initialized"]
 
@@ -54,6 +58,10 @@ class BootstrapInfo:
     state: BootstrapState
     api_version: str | None = None
     server: str | None = None
+    # ``enabled: true`` on /1.0/cluster. A standalone (non-clustered) daemon
+    # still answers 200 there, so this is what actually tells the two apart.
+    clustered: bool = False
+    server_name: str | None = None
 
 
 class LXDBootstrap:
@@ -68,71 +76,23 @@ class LXDBootstrap:
     # Internals
     # ------------------------------------------------------------------
 
-    def _client(self) -> httpx.AsyncClient:
-        if not os.path.exists(self.socket_path):
-            raise LXDBootstrapError(
-                f"LXD socket not found at {self.socket_path}. "
-                "Is the LXD daemon installed and running on the host? "
-                "If LXD was installed via apt (not snap), the socket lives at "
-                "/var/lib/lxd/unix.socket instead.",
-            )
-        # Pre-flight permission check — surfaces EACCES with a useful hint
-        # before httpx swallows it as a generic HTTPError.
-        self._check_socket_access()
-        transport = httpx.AsyncHTTPTransport(uds=self.socket_path)
-        return httpx.AsyncClient(transport=transport, timeout=self._timeout)
-
     def _check_socket_access(self) -> None:
         """Verify the current process can read the Unix socket.
 
-        LXD ships its socket as ``root:lxd 0660``. The backend must be in the
-        ``lxd`` group (or run as root, which we don't want). On most hosts the
-        ``lxd`` group is GID 998, but the user can override via
-        ``LXD_GID`` in the compose env (and the matching build arg).
+        Raises ``LXDBootstrapError`` so callers of the bootstrap flow never
+        have to import the probe module.
         """
         try:
-            stat_result = os.stat(self.socket_path)
-        except OSError as exc:
-            raise LXDBootstrapError(
-                f"Cannot stat LXD socket at {self.socket_path}: {exc}",
-            ) from exc
+            ensure_socket_accessible(self.socket_path)
+        except LXDProbeError as exc:
+            raise LXDBootstrapError(str(exc)) from exc
 
-        if not stat.S_ISSOCK(stat_result.st_mode):
-            raise LXDBootstrapError(
-                f"{self.socket_path} exists but is not a Unix socket "
-                f"(mode={oct(stat_result.st_mode & 0o777)}).",
-            )
-
-        sock_uid = stat_result.st_uid
-        sock_gid = stat_result.st_gid
-        proc_uid = os.getuid()
-        proc_gid = os.getgid()
-        proc_groups = os.getgroups()
-
-        if sock_uid == proc_uid:
-            return  # we own the socket
-        if sock_gid in proc_groups or sock_gid == proc_gid:
-            return  # we are in the right group
-
-        raise LXDBootstrapError(
-            f"Permission denied on LXD socket {self.socket_path}: "
-            f"socket is owned by UID {sock_uid} GID {sock_gid}, "
-            f"backend runs as UID {proc_uid} GID {proc_gid} "
-            f"(supplementary groups: {proc_groups}). "
-            f"Add the backend to the lxd group, or set LXD_GID in the "
-            f"compose env to match the host's lxd group GID.",
+    async def _server_info(self):
+        return await fetch_server_info(
+            self.socket_path,
+            "socket",
+            timeout=self._timeout,
         )
-
-    async def _get(self, client: httpx.AsyncClient, path: str) -> httpx.Response:
-        return await client.get(f"http://lxd.local{path}")
-
-    async def _post(
-        self,
-        client: httpx.AsyncClient,
-        path: str,
-        json_body: dict[str, Any],
-    ) -> httpx.Response:
-        return await client.post(f"http://lxd.local{path}", json=json_body)
 
     # ------------------------------------------------------------------
     # Status
@@ -141,59 +101,35 @@ class LXDBootstrap:
     async def check_status(self) -> BootstrapInfo:
         """Detect the current bootstrap state of the daemon.
 
-        Heuristic:
-        - If GET /1.0 returns 200 with ``public=true`` AND GET /1.0/cluster
-          returns 404, the daemon is running but no cluster has been set up
-          yet (uninitialized).
-        - If /1.0/cluster returns 403, the cluster exists but we're not
-          trusted (untrusted).
-        - If /1.0 returns 200 with ``public=false`` (the client-cert path)
-          or /1.0/cluster returns 200, the cluster is initialized.
+        Heuristic, based on what the LXD REST API reports:
+
+        - ``GET /1.0`` answers 200 as soon as the daemon is reachable — this
+          is the liveness signal.
+        - ``GET /1.0/cluster`` answers 404 when no cluster has been set up
+          (``uninitialized``), 403 when a cluster exists but our certificate
+          is not trusted (``untrusted``), and 200 once the daemon is
+          initialized (``initialized``) — whether standalone or clustered.
         """
-        async with self._client() as client:
-            try:
-                root = await self._get(client, "/1.0")
-            except httpx.HTTPError as exc:
-                raise LXDBootstrapError(f"Cannot reach LXD daemon: {exc}") from exc
+        try:
+            info = await self._server_info()
+        except LXDProbeError as exc:
+            raise LXDBootstrapError(str(exc)) from exc
 
-            if root.status_code != 200:
-                raise LXDBootstrapError(
-                    f"Unexpected response from LXD /1.0: HTTP {root.status_code}",
-                    status_code=root.status_code,
-                )
+        state: BootstrapState
+        if info.cluster_state == "absent":
+            state = "uninitialized"
+        elif info.cluster_state == "forbidden":
+            state = "untrusted"
+        else:
+            state = "initialized"
 
-            metadata = root.json().get("metadata") or {}
-            api_version = metadata.get("api_version")
-            server = metadata.get("server")
-            public = bool(metadata.get("public", False))
-
-            # Try the cluster endpoint to refine the state.
-            try:
-                cluster_resp = await self._get(client, "/1.0/cluster")
-            except httpx.HTTPError as exc:
-                raise LXDBootstrapError(f"Cannot reach /1.0/cluster: {exc}") from exc
-
-            if cluster_resp.status_code == 200:
-                state: BootstrapState = "initialized"
-            elif cluster_resp.status_code == 403:
-                # Cluster exists, we are not trusted.
-                state = "untrusted"
-            elif cluster_resp.status_code == 404 and public:
-                # No cluster yet — but we might still need to handle the case
-                # where the LXD daemon returned 404 on /1.0/cluster because
-                # of routing issues. The 200 on /1.0 confirms the daemon is up.
-                state = "uninitialized"
-            else:
-                raise LXDBootstrapError(
-                    f"Unexpected response from /1.0/cluster: HTTP {cluster_resp.status_code}",
-                    status_code=cluster_resp.status_code,
-                )
-
-            return BootstrapInfo(
-                state=state,
-                api_version=api_version,
-                server=server,
-            )
+        return BootstrapInfo(
+            state=state,
+            api_version=info.api_version,
+            server=info.server,
+            clustered=info.clustered,
+            server_name=info.server_name,
+        )
 
     # ------------------------------------------------------------------
     # Bootstrap
@@ -217,32 +153,20 @@ class LXDBootstrap:
             "profiles": [],
         }
 
-        async with self._client() as client:
-            try:
-                resp = await self._post(client, "/1.0/cluster", preseed)
-            except httpx.HTTPError as exc:
-                raise LXDBootstrapError(
-                    f"Cannot reach LXD daemon for bootstrap: {exc}",
-                ) from exc
-
-            if resp.status_code in (200, 202):
-                logger.info(
-                    "lxd.bootstrap.accepted",
-                    server_name=server_name,
-                    http_status=resp.status_code,
-                )
-                return
-
-            # LXD returns error details in the "error" field of the response.
-            try:
-                err = resp.json().get("error", "")
-            except ValueError:
-                err = resp.text
-
-            raise LXDBootstrapError(
-                f"LXD refused bootstrap (HTTP {resp.status_code}): {err}",
-                status_code=resp.status_code,
+        try:
+            status_code = await post_cluster_preseed(
+                self.socket_path,
+                preseed,
+                timeout=self._timeout,
             )
+        except LXDProbeError as exc:
+            raise LXDBootstrapError(str(exc)) from exc
+
+        logger.info(
+            "lxd.bootstrap.accepted",
+            server_name=server_name,
+            http_status=status_code,
+        )
 
     # ------------------------------------------------------------------
     # Singleton
@@ -260,3 +184,12 @@ class LXDBootstrap:
     def reset(cls) -> None:
         """Test-only — drop the cached instance."""
         cls._instance = None
+
+
+__all__ = [
+    "DEFAULT_TIMEOUT_SECONDS",
+    "BootstrapInfo",
+    "BootstrapState",
+    "LXDBootstrap",
+    "LXDBootstrapError",
+]

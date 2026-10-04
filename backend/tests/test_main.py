@@ -67,6 +67,16 @@ def test_routers_are_mounted(client):
     """Smoke check: every documented router prefix responds with something other
     than 404 at its root (auth may redirect/422, others require auth and return
     401 — either is fine; 404 means the router isn't mounted)."""
-    for path in ("/auth/login", "/containers", "/images", "/networks", "/storage", "/users"):
+    paths = (
+        "/auth/login",
+        "/containers",
+        "/images",
+        "/networks",
+        "/storage",
+        "/hosts",
+        "/bootstrap/status",
+        "/users",
+    )
+    for path in paths:
         response = client.post(path) if path == "/auth/login" else client.get(path)
         assert response.status_code != 404, f"router for {path} not mounted"

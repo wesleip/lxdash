@@ -236,9 +236,9 @@ class MockLXDClient:
     _networks: dict[str, _FakeNetwork] = _seed_networks()
     _storage_pools: dict[str, _FakeStoragePool] = _seed_storage()
 
-    def __init__(self) -> None:
-        self.host_id: int | None = 0
-        logger.info("lxd.mock_client_created")
+    def __init__(self, host_id: int | None = 0) -> None:
+        self.host_id: int | None = host_id
+        logger.info("lxd.mock_client_created", host_id=host_id)
 
     # ------------------------------------------------------------------
     # Containers

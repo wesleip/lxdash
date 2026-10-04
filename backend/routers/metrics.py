@@ -17,7 +17,15 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, status
 from sse_starlette.sse import EventSourceResponse
 
+from database import SessionLocal
 from dependencies import CurrentUser
+from services.host_service import (
+    AmbiguousHostError,
+    HostNotFoundError,
+    NoHostRegisteredError,
+    open_client,
+    resolve_host,
+)
 from services.lxd_client import LXDClientError
 
 router = APIRouter(prefix="/containers", tags=["metrics"])
@@ -74,8 +82,8 @@ async def _stats_generator(
 )
 async def container_stats_sse(
     name: str,
-    host_id: int = Query(..., description="LXD host ID"),
     interval: float = Query(default=1.0, ge=0.5, le=30.0, description="Poll interval in seconds"),
+    host_id: int | None = Query(default=None, description="LXD host ID"),
     current_user: CurrentUser = None,  # type: ignore[assignment]
 ) -> EventSourceResponse:
     """Open an SSE stream that emits container stats every *interval* seconds.
@@ -85,45 +93,41 @@ async def container_stats_sse(
 
     Clients should reconnect automatically on disconnect (standard SSE behaviour).
     """
-    # We can't use the LXDDep annotated dependency directly in an SSE endpoint
-    # because the dependency needs request-scope; we resolve it here manually.
+    # The LXD client is resolved with a throwaway session: an SSE response has
+    # no request-scoped dependency to lean on, and the client is stateless
+    # after connect. The generator below is a plain async gen for that reason.
+    db = SessionLocal()
+    try:
+        host = resolve_host(db, host_id)
+    except NoHostRegisteredError as exc:
+        logger.warning("metrics.no_host", host_id=host_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except AmbiguousHostError as exc:
+        logger.warning("metrics.host_ambiguous", host_id=host_id, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except HostNotFoundError as exc:
+        logger.warning("metrics.host_not_found", host_id=host_id, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    finally:
+        db.close()
 
-    # The actual dependency injection happens at the route level; here we
-    # construct the client inline so the generator can be a plain async gen.
-    # In production you would wire this through proper DI; this keeps the
-    # SSE handler self-contained and testable.
-
-    # Re-resolve lxd_client via a lightweight wrapper
-    async def _make_lxd():
-        from database import SessionLocal
-        from models.host import Host
-        from services.lxd_client import LXDClient
-
-        db = SessionLocal()
-        try:
-            host = db.query(Host).filter(Host.id == host_id, Host.is_active.is_(True)).first()
-            if host is None:
-                return None
-            if host.connection_type.value == "socket":
-                return await LXDClient.connect_socket(host.address, host_id=host.id)
-            return await LXDClient.connect_tls(
-                endpoint=host.address,
-                cert_pem=host.tls_cert or "",
-                key_pem=host.tls_key or "",
-                server_cert_pem=host.tls_server_cert,
-                host_id=host.id,
-            )
-        except LXDClientError:
-            return None
-        finally:
-            db.close()
-
-    lxd = await _make_lxd()
-    if lxd is None:
+    try:
+        lxd = await open_client(host)
+    except LXDClientError as exc:
+        logger.warning("metrics.connect_failed", host_id=host.id, error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to the LXD host.",
-        )
+        ) from exc
 
     return EventSourceResponse(
         _stats_generator(name, lxd, interval),

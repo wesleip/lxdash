@@ -52,10 +52,21 @@ class BootstrapRequest(BaseModel):
 class BootstrapStatus(BaseModel):
     """Body for GET /bootstrap/status."""
 
-    state: Literal["uninitialized", "untrusted", "initialized"]
+    # ``unreachable`` is not a daemon state but a panel state: the socket is
+    # missing or not readable, which is the one case where no other answer is
+    # truthful. The wizard shows the socket-permission hint instead of
+    # offering to bootstrap a daemon it cannot even see.
+    state: Literal["unreachable", "uninitialized", "untrusted", "initialized"]
     api_version: str | None = None
     server: str | None = None
+    # ``enabled: true`` on /1.0/cluster. A standalone (non-clustered) daemon
+    # still answers 200 there, so this is what tells the two apart.
+    clustered: bool = False
+    server_name: str | None = None
     socket: str | None = None
+    # Set when the local daemon already has a ``hosts`` row.
+    host_id: int | None = None
+    host_name: str | None = None
     message: str | None = None
 
 

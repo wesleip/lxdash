@@ -4,7 +4,8 @@ from __future__ import annotations
 
 Provides a bidirectional PTY console for a running container.  The flow is:
 
-  1. Client connects to ``WS /ws/containers/{name}/console?host_id=<id>&token=<jwt>``
+  1. Client connects to ``WS /ws/containers/{name}/console?token=<jwt>``
+     (``host_id`` is optional when a single host is registered).
   2. Server authenticates the JWT (passed as query param because browsers cannot
      send custom headers on WebSocket upgrade requests).
   3. Server opens a console on the LXD container via pylxd's exec/console API
@@ -21,15 +22,13 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from jose import JWTError
 from sqlalchemy.orm import Session
 
-from config import get_settings
 from database import SessionLocal
-from models.host import Host
 from models.user import User
 from services.auth_service import decode_token
-from services.lxd_client import LXDClient, LXDClientError
+from services.host_service import HostRegistryError, open_client, resolve_host
+from services.lxd_client import LXDClientError
 
 router = APIRouter(prefix="/ws", tags=["console"])
-settings = get_settings()
 logger = structlog.get_logger(__name__)
 
 _CLOSE_POLICY_VIOLATION = 1008  # WebSocket close code
@@ -56,8 +55,8 @@ async def _authenticate_ws(token: str, db: Session) -> User | None:
 async def container_console(
     websocket: WebSocket,
     name: str,
-    host_id: int = Query(..., description="LXD host ID"),
     token: str = Query(..., description="JWT access token"),
+    host_id: int | None = Query(default=None, description="LXD host ID"),
     width: int = Query(default=80, ge=10, le=500),
     height: int = Query(default=24, ge=5, le=200),
 ) -> None:
@@ -65,6 +64,9 @@ async def container_console(
 
     Binary frames from the client are forwarded to the container's stdin.
     Output from the container is forwarded back as binary frames.
+
+    ``host_id`` is optional: with a single registered host it is inferred, the
+    same way the REST routes do.
 
     The connection is closed with code 1008 on auth failure.
     """
@@ -82,26 +84,17 @@ async def container_console(
     # Look up the host (reuse a fresh session for the lifetime of the WS).
     db = SessionLocal()
     try:
-        host: Host | None = (
-            db.query(Host).filter(Host.id == host_id, Host.is_active.is_(True)).first()
-        )
-        if host is None:
+        try:
+            host = resolve_host(db, host_id)
+        except HostRegistryError as exc:
+            logger.warning("console.host_unresolved", host_id=host_id, error=str(exc))
             await websocket.close(code=_CLOSE_POLICY_VIOLATION)
             return
 
         try:
-            if host.connection_type.value == "socket":
-                lxd = await LXDClient.connect_socket(host.address, host_id=host.id)
-            else:
-                lxd = await LXDClient.connect_tls(
-                    endpoint=host.address,
-                    cert_pem=host.tls_cert or "",
-                    key_pem=host.tls_key or "",
-                    server_cert_pem=host.tls_server_cert,
-                    host_id=host.id,
-                )
+            lxd = await open_client(host)
         except LXDClientError as exc:
-            logger.warning("console.connect_failed", host_id=host_id, error=str(exc))
+            logger.warning("console.connect_failed", host_id=host.id, error=str(exc))
             await websocket.close(code=_CLOSE_POLICY_VIOLATION)
             return
 
@@ -109,13 +102,13 @@ async def container_console(
         logger.info(
             "console.opened",
             container=name,
-            host_id=host_id,
+            host_id=host.id,
             user=user.username,
         )
 
         # Queue to receive output from the pylxd exec thread.
         out_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _run_console() -> None:
             """Run in a thread; push container output into the queue."""
