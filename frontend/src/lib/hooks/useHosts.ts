@@ -45,6 +45,14 @@ export function useActiveHostId(): number | null {
   return data.some((h) => h.id === activeHostId && h.is_active) ? activeHostId : null
 }
 
+/** The active host object, or null when none is chosen/available. */
+export function useActiveHost(): Host | null {
+  const activeHostId = useActiveHostId()
+  const { data } = useHosts()
+  if (!data || activeHostId === null) return null
+  return data.find((h) => h.id === activeHostId && h.is_active) ?? null
+}
+
 /** Liveness probe for one host. Polled on its own so it cannot block the list. */
 export function useHostHealth(hostId: number | null, options?: { enabled?: boolean }) {
   return useQuery({
