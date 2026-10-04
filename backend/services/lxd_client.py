@@ -13,6 +13,7 @@ import asyncio
 import os
 import tempfile
 from typing import Any
+from urllib.parse import quote
 
 import pylxd  # type: ignore[import]
 import structlog
@@ -50,11 +51,16 @@ class LXDClient:
         """Connect to a local LXD daemon via Unix socket."""
 
         def _connect() -> pylxd.Client:
-            return pylxd.Client(endpoint=f"http+unix://{socket_path}")
+            # pylxd/routes-unixsocket read the socket path from the URL *netloc*
+            # and percent-decode it, so the path must be quoted
+            # (http+unix://%2Fvar%2F...); the unquoted form parses with an
+            # empty netloc and fails with "No host supplied" before ever
+            # reaching the daemon.
+            return pylxd.Client(endpoint=f"http+unix://{quote(socket_path, safe='')}")
 
         try:
             raw = await asyncio.to_thread(_connect)
-        except pylxd.exceptions.ClientConnectionFailed as exc:
+        except Exception as exc:
             raise LXDClientError(f"Cannot connect to socket {socket_path}: {exc}") from exc
 
         logger.info("lxd.connected", mode="socket", socket=socket_path)
