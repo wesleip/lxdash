@@ -115,6 +115,43 @@ def test_start_and_stop_container(client, db_session, admin_user):
         MockLXDClient._containers["web-prod"].status_code = 103
 
 
+def test_get_container_state(client, db_session, admin_user):
+    """GET /containers/{name}/state — the endpoint the Resources tab polls."""
+    from main import app
+
+    _make_host(db_session)
+    _auth(app, admin_user)
+    try:
+        resp = client.get("/containers/web-prod/state")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["status"] == "Running"
+    assert data["status_code"] == 103
+    assert data["cpu"]["usage"] >= 0
+    assert data["memory"]["usage"] > 0
+    assert "/" in data["disk"]
+    assert data["network"]["eth0"]["hwaddr"] == "00:16:3e:ab:cd:ef"
+    assert data["network"]["eth0"]["addresses"][0]["scope"] == "global"
+    assert data["pid"] > 0
+    assert data["processes"] >= 1
+
+
+def test_container_state_is_404_for_an_unknown_container(client, db_session, admin_user):
+    from main import app
+
+    _make_host(db_session)
+    _auth(app, admin_user)
+    try:
+        resp = client.get("/containers/no-such-container/state")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 404
+
+
 def test_unknown_container_is_404(client, db_session, admin_user):
     from main import app
 

@@ -42,6 +42,58 @@ class ContainerStats(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# GET /containers/{name}/state — what the Resources tab polls
+# ---------------------------------------------------------------------------
+
+
+class ContainerStateCpu(BaseModel):
+    usage: int = 0  # cumulative CPU time, nanoseconds
+    user_time: int = 0
+    system_time: int = 0
+
+
+class ContainerStateDisk(BaseModel):
+    usage: int = 0  # bytes
+
+
+class ContainerStateCounters(BaseModel):
+    bytes_received: int = 0
+    bytes_sent: int = 0
+    packets_received: int = 0
+    packets_sent: int = 0
+
+
+class ContainerStateAddress(BaseModel):
+    family: str  # "inet" | "inet6"
+    address: str
+    netmask: str
+    scope: str  # "global" | "link" | "local"
+
+
+class ContainerStateInterface(BaseModel):
+    addresses: list[ContainerStateAddress] = []
+    counters: ContainerStateCounters = Field(default_factory=ContainerStateCounters)
+    hwaddr: str = ""
+    host_name: str = ""
+    mtu: int = 1500
+    state: str = ""  # "up" | "down"
+    type: str = ""
+
+
+class ContainerStateResponse(BaseModel):
+    """Mirror of LXD's GET /1.0/instances/{name}/state, shaped for the UI."""
+
+    status: str
+    status_code: int
+    cpu: ContainerStateCpu = Field(default_factory=ContainerStateCpu)
+    memory: ContainerMemoryUsage = Field(default_factory=ContainerMemoryUsage)
+    disk: dict[str, ContainerStateDisk] = {}
+    network: dict[str, ContainerStateInterface] | None = None
+    pid: int = 0
+    processes: int = 0
+
+
+# ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
 

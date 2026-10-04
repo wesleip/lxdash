@@ -24,13 +24,24 @@ logger = structlog.get_logger(__name__)
 
 @dataclass
 class _FakeState:
-    cpu: dict[str, Any] = field(default_factory=lambda: {"usage": random.randint(0, 4_000_000_000)})
+    cpu: dict[str, Any] = field(
+        default_factory=lambda: {
+            "usage": random.randint(0, 4_000_000_000),
+            "user_time": random.randint(0, 3_000_000_000),
+            "system_time": random.randint(0, 1_000_000_000),
+        }
+    )
     memory: dict[str, Any] = field(
         default_factory=lambda: {
             "usage": random.randint(50_000_000, 512_000_000),
             "usage_peak": random.randint(512_000_000, 768_000_000),
             "swap_usage": 0,
             "swap_usage_peak": 0,
+        }
+    )
+    disk: dict[str, Any] = field(
+        default_factory=lambda: {
+            "/": {"usage": random.randint(200_000_000, 4_000_000_000)},
         }
     )
     network: dict[str, Any] = field(
@@ -50,6 +61,8 @@ class _FakeState:
             }
         }
     )
+    pid: int = field(default_factory=lambda: random.randint(100, 9_999))
+    processes: int = field(default_factory=lambda: random.randint(1, 64))
 
 
 @dataclass
