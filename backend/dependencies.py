@@ -157,9 +157,17 @@ async def get_lxd_client(
         return await open_client(host)
     except LXDClientError as exc:
         logger.warning("lxd.connect_failed", host_id=host.id, error=str(exc))
+        # Surface the daemon address and the underlying error class so the
+        # operator can tell socket-permission failures (PermissionError →
+        # fix LXD_GID in the compose env) apart from a stopped daemon.
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Unable to connect to the LXD host.",
+            detail=(
+                f"LXD daemon at {host.address} is unreachable: {exc}. "
+                "If this is a Unix socket, confirm the backend container "
+                "belongs to the LXD group (set LXD_GID in the project "
+                "root .env)."
+            ),
         ) from exc
 
 

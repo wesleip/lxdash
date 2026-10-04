@@ -142,7 +142,10 @@ export default function ContainersPage() {
   const { data, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ['containers', hostId],
     queryFn: ({ signal }) => containers.list(hostId, signal),
-    refetchInterval: 5000,
+    // Slow down once the daemon is unreachable: a connection-refused 502 on
+    // every tick (e.g. when the LXD_GID on the host is wrong) is otherwise
+    // pure noise in both nginx access logs and the backend warning log.
+    refetchInterval: (q) => (q.state.status === 'error' ? 60_000 : 5000),
   })
 
   const stats = {
