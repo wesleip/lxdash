@@ -232,3 +232,71 @@ def test_snapshots_of_an_unknown_container_are_404(client, db_session, admin_use
         app.dependency_overrides.clear()
 
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Regression: non-clustered LXD daemons report ``location: null``
+# ---------------------------------------------------------------------------
+
+
+class _StubContainer:
+    """Mirror the pylxd attribute surface used by the mapper.
+
+    pylxd forces ``location = None`` on non-clustered daemons (its
+    own ``Instance.__setattr__`` does it), which is the exact shape
+    that made ``GET /containers`` answer 500: an explicit ``None``
+    never falls back to the pydantic field default (``location: str
+    = ""``) — the default only applies when the key is absent.
+    """
+
+    def __init__(self, **overrides):
+        self.name = "web"
+        self.status = "Running"
+        self.status_code = 103
+        self.type = "container"
+        self.profiles = ["default"]
+        self.config = {}
+        self.architecture = "x86_64"
+        self.created_at = "2026-10-04T00:00:00Z"
+        self.last_used_at = None
+        self.location = None
+        for key, value in overrides.items():
+            setattr(self, key, value)
+
+
+def test_mapper_normalises_none_location_to_empty_string():
+    from routers.containers import _container_to_response
+
+    assert _container_to_response(_StubContainer()).location == ""
+
+
+def test_mapper_keeps_real_cluster_location():
+    from routers.containers import _container_to_response
+
+    container = _StubContainer(location="node-1")
+    assert _container_to_response(container).location == "node-1"
+
+
+def test_list_containers_survives_a_none_location(client, db_session, admin_user):
+    """The dashboard polls GET /containers every 5s — it must not 500
+    on a non-clustered daemon, where pylxd exposes location=None.
+    """
+    from unittest.mock import AsyncMock
+
+    from dependencies import get_lxd_client
+    from main import app
+
+    _make_host(db_session)
+    _auth(app, admin_user)
+    lxd = AsyncMock()
+    lxd.list_containers.return_value = [_StubContainer()]
+    app.dependency_overrides[get_lxd_client] = lambda: lxd
+    try:
+        resp = client.get("/containers")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body[0]["name"] == "web"
+    assert body[0]["location"] == ""
