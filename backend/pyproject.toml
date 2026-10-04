@@ -60,6 +60,17 @@ filterwarnings = [
     "error",
     # passlib emits a noisy warning about __about__ on bcrypt 4.x; harmless.
     "ignore::DeprecationWarning:passlib.*",
+    # Third-party deprecations we cannot fix from here. Both are raised while
+    # the libraries run, with the warning attributed to the module that *calls*
+    # them (hence the starlette/jose module targets, not anyio/jose internals):
+    #   - anyio deprecates anyio.abc.BlockingPortal, but starlette 0.41 (the
+    #     version fastapi 0.115.x pins) still uses the old alias. Without this,
+    #     importing fastapi.testclient fails and pytest cannot even load
+    #     conftest.
+    #   - python-jose 3.3 calls datetime.utcnow(), deprecated in Python 3.12.
+    # Drop these once the pins move forward.
+    "ignore::DeprecationWarning:starlette.testclient",
+    "ignore::DeprecationWarning:jose.jwt",
 ]
 
 [tool.bandit]

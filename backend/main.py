@@ -173,9 +173,12 @@ async def health() -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    # Dev entry point: binding 0.0.0.0 is intentional here so the reload server
+    # is reachable from the host and from other compose services. Production
+    # never goes through this path — entrypoint.sh runs uvicorn directly.
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104
         port=8000,
         reload=settings.APP_ENV == "development",
         log_config=None,  # structlog handles logging

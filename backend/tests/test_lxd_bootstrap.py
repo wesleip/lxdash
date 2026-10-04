@@ -82,7 +82,7 @@ async def test_check_status_uninitialized(monkeypatch: pytest.MonkeyPatch) -> No
     client.get = AsyncMock(side_effect=[root, cluster])
 
     with patch("services.lxd_bootstrap.httpx.AsyncClient", return_value=client):
-        info = await LXDBootstrap("/tmp/fake.sock").check_status()
+        info = await LXDBootstrap("/lxd-test/unix.socket").check_status()
 
     assert info.state == "uninitialized"
     assert info.api_version == "1.0"
@@ -110,7 +110,7 @@ async def test_check_status_untrusted(monkeypatch: pytest.MonkeyPatch) -> None:
     client.get = AsyncMock(side_effect=[root, cluster])
 
     with patch("services.lxd_bootstrap.httpx.AsyncClient", return_value=client):
-        info = await LXDBootstrap("/tmp/fake.sock").check_status()
+        info = await LXDBootstrap("/lxd-test/unix.socket").check_status()
 
     assert info.state == "untrusted"
 
@@ -136,7 +136,7 @@ async def test_check_status_initialized(monkeypatch: pytest.MonkeyPatch) -> None
     client.get = AsyncMock(side_effect=[root, cluster])
 
     with patch("services.lxd_bootstrap.httpx.AsyncClient", return_value=client):
-        info = await LXDBootstrap("/tmp/fake.sock").check_status()
+        info = await LXDBootstrap("/lxd-test/unix.socket").check_status()
 
     assert info.state == "initialized"
 
@@ -223,7 +223,7 @@ async def test_bootstrap_success(monkeypatch: pytest.MonkeyPatch) -> None:
     client.post = AsyncMock(return_value=resp)
 
     with patch("services.lxd_bootstrap.httpx.AsyncClient", return_value=client):
-        await LXDBootstrap("/tmp/fake.sock").bootstrap(
+        await LXDBootstrap("/lxd-test/unix.socket").bootstrap(
             server_name="node1", cluster_password="supersecret-password"
         )
 
@@ -251,7 +251,7 @@ async def test_bootstrap_refused_with_lxd_error(monkeypatch: pytest.MonkeyPatch)
         patch("services.lxd_bootstrap.httpx.AsyncClient", return_value=client),
         pytest.raises(LXDBootstrapError, match="cluster member already exists"),
     ):
-        await LXDBootstrap("/tmp/fake.sock").bootstrap(
+        await LXDBootstrap("/lxd-test/unix.socket").bootstrap(
             server_name="node1", cluster_password="supersecret-password"
         )
 
@@ -353,7 +353,7 @@ def test_bootstrap_creates_host_record(client, db_session, admin_user):
     instance = MagicMock()
     instance.check_status = AsyncMock(return_value=fake_status)
     instance.bootstrap = AsyncMock(return_value=None)
-    instance.socket_path = "/tmp/fake.sock"
+    instance.socket_path = "/lxd-test/unix.socket"
     bootstrap_mod.LXDBootstrap._instance = instance
 
     try:
@@ -396,7 +396,7 @@ def test_bootstrap_refuses_when_already_initialized(client, admin_user):
     instance = MagicMock()
     instance.check_status = AsyncMock(return_value=fake_status)
     instance.bootstrap = AsyncMock()
-    instance.socket_path = "/tmp/fake.sock"
+    instance.socket_path = "/lxd-test/unix.socket"
     bootstrap_mod.LXDBootstrap._instance = instance
 
     try:
@@ -442,7 +442,7 @@ def test_bootstrap_returns_409_on_host_name_conflict(client, db_session, admin_u
     instance = MagicMock()
     instance.check_status = AsyncMock(return_value=fake_status)
     instance.bootstrap = AsyncMock(return_value=None)
-    instance.socket_path = "/tmp/fake.sock"
+    instance.socket_path = "/lxd-test/unix.socket"
     bootstrap_mod.LXDBootstrap._instance = instance
 
     try:
