@@ -8,6 +8,7 @@ import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
 // Lazy-load pages so the initial bundle stays small.
 const LoginPage = lazy(() => import('@/pages/LoginPage'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const ContainersPage = lazy(() => import('@/pages/ContainersPage'))
 const ContainerDetail = lazy(() => import('@/pages/ContainerDetail'))
 const Terminal = lazy(() => import('@/pages/Terminal'))
 const Images = lazy(() => import('@/pages/Images'))
@@ -41,10 +42,8 @@ export default function App() {
 
             {/* Container routes */}
             <Route path="containers">
-              {/* /containers redirects to dashboard (list is on the dashboard) */}
-              <Route index element={<Navigate to="/" replace />} />
+              <Route index element={<ContainersPage />} />
               <Route path=":name" element={<ContainerDetail />} />
-              {/* Console uses full-screen layout, still protected */}
             </Route>
 
             {/* Other sections */}

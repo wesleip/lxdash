@@ -30,6 +30,7 @@ import type {
   Host,
   HostCreate,
   HostHealth,
+  HostMetrics,
   BootstrapRequest,
   BootstrapRegisterRequest,
   BootstrapResult,
@@ -350,6 +351,9 @@ export const hosts = {
 
   health: (hostId: number, signal?: AbortSignal): Promise<HostHealth> =>
     get<HostHealth>(`/hosts/${hostId}/health`, signal),
+
+  metrics: (hostId: number, signal?: AbortSignal): Promise<HostMetrics> =>
+    get<HostMetrics>(`/hosts/${hostId}/metrics`, signal),
 }
 
 // ---------------------------------------------------------------------------

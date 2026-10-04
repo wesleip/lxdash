@@ -386,6 +386,21 @@ export interface HostHealth {
   message: string | null
 }
 
+export interface HostMetrics {
+  host_id: number
+  host_name: string
+  reachable: boolean
+  cpu_usage: number | null
+  cpu_total: number | null
+  memory_used: number | null
+  memory_total: number | null
+  disk_used: number | null
+  disk_total: number | null
+  network_bytes_received: number | null
+  network_bytes_sent: number | null
+  message: string | null
+}
+
 // ---------------------------------------------------------------------------
 // Bootstrap (onboarding the local LXD daemon — admin-only)
 // ---------------------------------------------------------------------------

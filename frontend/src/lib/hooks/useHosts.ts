@@ -45,6 +45,14 @@ export function useActiveHostId(): number | null {
   return data.some((h) => h.id === activeHostId && h.is_active) ? activeHostId : null
 }
 
+/** The active host object, or null when none is chosen/available. */
+export function useActiveHost(): Host | null {
+  const activeHostId = useActiveHostId()
+  const { data } = useHosts()
+  if (!data || activeHostId === null) return null
+  return data.find((h) => h.id === activeHostId && h.is_active) ?? null
+}
+
 /**
  * The host the UI should render as selected: the explicit choice, or — while
  * the choice is still "Automatic" (`activeHostId === null`) — the single

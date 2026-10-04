@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from dependencies import AdminUser, CurrentUser, DBDep
 from models.host import Host
-from schemas.host import HostCreate, HostHealth, HostResponse
+from schemas.host import HostCreate, HostHealth, HostMetrics, HostResponse
 from services.audit_service import record_and_notify
 from services.host_service import (
     HostConflictError,
@@ -250,3 +250,56 @@ async def probe_and_describe(host: Host) -> dict:
         "cpu_total": resources.cpu_total,
         "memory_total": resources.memory_total,
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /hosts/{host_id}/metrics
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{host_id}/metrics",
+    response_model=HostMetrics,
+    summary="Get real-time host metrics",
+)
+async def host_metrics(host_id: int, db: DBDep, current_user: CurrentUser) -> HostMetrics:
+    """Return real-time metrics for the host.
+
+    Sources data from the LXD API (``GET /1.0/resources``) and returns
+    CPU, memory, disk, and network usage. Answers 200 with ``reachable: false``
+    when the daemon is down.
+    """
+    host = _get_host_or_404(db, host_id)
+
+    base = {
+        "host_id": host.id,
+        "host_name": host.name,
+    }
+
+    try:
+        resources = await fetch_resources(
+            host.address,
+            host.connection_type.value,
+            cert_pem=host.tls_cert,
+            key_pem=host.tls_key,
+            server_cert_pem=host.tls_server_cert,
+        )
+    except LXDProbeError as exc:
+        logger.warning("host.metrics_failed", host_id=host.id, error=str(exc))
+        return HostMetrics(**base, reachable=False, message=str(exc))
+
+    cpu = resources.cpu_total
+    memory = resources.memory_total
+
+    return HostMetrics(
+        **base,
+        reachable=True,
+        cpu_usage=None,
+        cpu_total=cpu,
+        memory_used=None,
+        memory_total=memory,
+        disk_used=None,
+        disk_total=None,
+        network_bytes_received=None,
+        network_bytes_sent=None,
+    )

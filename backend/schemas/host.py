@@ -93,6 +93,27 @@ class HostHealth(BaseModel):
     message: str | None = None
 
 
+class HostMetrics(BaseModel):
+    """Answer of ``GET /hosts/{id}/metrics``.
+
+    Real-time host metrics sourced from the LXD API (``GET /1.0/resources``).
+    All fields are ``None`` when the daemon does not expose them.
+    """
+
+    host_id: int
+    host_name: str
+    reachable: bool
+    cpu_usage: float | None = None
+    cpu_total: int | None = None
+    memory_used: int | None = None
+    memory_total: int | None = None
+    disk_used: int | None = None
+    disk_total: int | None = None
+    network_bytes_received: int | None = None
+    network_bytes_sent: int | None = None
+    message: str | None = None
+
+
 class HostRegisterRequest(BaseModel):
     """Body for ``POST /bootstrap/register``.
 
