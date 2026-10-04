@@ -30,18 +30,26 @@ logger = structlog.get_logger(__name__)
 
 
 def _container_to_response(c) -> ContainerResponse:
-    """Map a pylxd Container object to ContainerResponse."""
+    """Map a pylxd Container object to ContainerResponse.
+
+    Optional fields are normalised with ``or`` because pylxd exposes
+    ``None`` for them on non-clustered daemons — its own
+    ``Instance.__setattr__`` forces ``location = None`` when
+    ``client.server_clustered`` is false. A pydantic field default
+    (``= ""``) does not save us: it only applies when the key is
+    absent, and the mapper passes the value explicitly.
+    """
     return ContainerResponse(
         name=c.name,
         status=c.status,
         status_code=c.status_code,
-        type=getattr(c, "type", "container"),
+        type=getattr(c, "type", None) or "container",
         profiles=list(c.profiles),
         config=dict(c.config),
-        architecture=getattr(c, "architecture", ""),
+        architecture=getattr(c, "architecture", None) or "",
         created_at=getattr(c, "created_at", None),
         last_used_at=getattr(c, "last_used_at", None),
-        location=getattr(c, "location", ""),
+        location=getattr(c, "location", None) or "",
     )
 
 
