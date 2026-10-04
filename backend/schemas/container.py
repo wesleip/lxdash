@@ -49,7 +49,10 @@ class ContainerStats(BaseModel):
 class ContainerCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9\-]*$")
     image: str = Field(..., description="Image alias or fingerprint, e.g. 'ubuntu:22.04'")
-    host_id: int = Field(..., description="ID of the Host record to create the container on")
+    # The host is selected via the `host_id` query parameter (see
+    # dependencies.get_lxd_client); the body field is accepted for
+    # backwards compatibility but ignored, so it must not be required.
+    host_id: int | None = Field(default=None, description="Deprecated: use ?host_id= instead")
     profiles: list[str] = Field(default=["default"])
     config: dict[str, Any] = Field(default_factory=dict)
     devices: dict[str, Any] = Field(default_factory=dict)
