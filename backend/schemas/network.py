@@ -10,7 +10,10 @@ from pydantic import BaseModel, Field
 
 
 class NetworkCreate(BaseModel):
-    host_id: int = Field(..., description="Target LXD host ID")
+    # The host is selected via the `host_id` query parameter; the body field is
+    # accepted for backwards compatibility but ignored, so it must not be
+    # required.
+    host_id: int | None = Field(default=None, description="Deprecated: use ?host_id= instead")
     name: str = Field(
         ..., min_length=1, max_length=15, description="Network bridge name, e.g. lxdbr1"
     )

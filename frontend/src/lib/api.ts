@@ -191,25 +191,16 @@ export const containers = {
   delete: (hostId: HostId, name: string): Promise<void> =>
     del<void>(hostPath(`/containers/${name}`, hostId)),
 
+  // The backend exposes one route per action (POST /start|stop|restart);
+  // PUT /containers/{name}/state does not exist and returned 404.
   start: (hostId: HostId, name: string): Promise<void> =>
-    put<void>(hostPath(`/containers/${name}/state`, hostId), {
-      action: 'start',
-      timeout: 30,
-    } satisfies ContainerAction),
+    post<void>(hostPath(`/containers/${name}/start`, hostId), { timeout: 30 }),
 
   stop: (hostId: HostId, name: string, force = false): Promise<void> =>
-    put<void>(hostPath(`/containers/${name}/state`, hostId), {
-      action: 'stop',
-      timeout: 30,
-      force,
-    } satisfies ContainerAction),
+    post<void>(hostPath(`/containers/${name}/stop`, hostId), { timeout: 30, force }),
 
   restart: (hostId: HostId, name: string, force = false): Promise<void> =>
-    put<void>(hostPath(`/containers/${name}/state`, hostId), {
-      action: 'restart',
-      timeout: 30,
-      force,
-    } satisfies ContainerAction),
+    post<void>(hostPath(`/containers/${name}/restart`, hostId), { timeout: 30, force }),
 
   freeze: (hostId: HostId, name: string): Promise<void> =>
     put<void>(hostPath(`/containers/${name}/state`, hostId), {

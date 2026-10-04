@@ -24,13 +24,24 @@ logger = structlog.get_logger(__name__)
 
 @dataclass
 class _FakeState:
-    cpu: dict[str, Any] = field(default_factory=lambda: {"usage": random.randint(0, 4_000_000_000)})
+    cpu: dict[str, Any] = field(
+        default_factory=lambda: {
+            "usage": random.randint(0, 4_000_000_000),
+            "user_time": random.randint(0, 3_000_000_000),
+            "system_time": random.randint(0, 1_000_000_000),
+        }
+    )
     memory: dict[str, Any] = field(
         default_factory=lambda: {
             "usage": random.randint(50_000_000, 512_000_000),
             "usage_peak": random.randint(512_000_000, 768_000_000),
             "swap_usage": 0,
             "swap_usage_peak": 0,
+        }
+    )
+    disk: dict[str, Any] = field(
+        default_factory=lambda: {
+            "/": {"usage": random.randint(200_000_000, 4_000_000_000)},
         }
     )
     network: dict[str, Any] = field(
@@ -50,6 +61,16 @@ class _FakeState:
             }
         }
     )
+    pid: int = field(default_factory=lambda: random.randint(100, 9_999))
+    processes: int = field(default_factory=lambda: random.randint(1, 64))
+
+
+@dataclass
+class _FakeSnapshot:
+    name: str
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    expires_at: str | None = None
+    stateful: bool = False
 
 
 @dataclass
@@ -64,6 +85,7 @@ class _FakeContainer:
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     last_used_at: str | None = None
     location: str = "none"
+    snapshots: list[_FakeSnapshot] = field(default_factory=list)
 
     def state(self) -> _FakeState:
         return _FakeState()
@@ -144,6 +166,9 @@ def _seed_containers() -> dict[str, _FakeContainer]:
             status="Running",
             status_code=103,
             config={"limits.cpu": "2", "limits.memory": "512MB"},
+            snapshots=[
+                _FakeSnapshot(name="snap0", created_at="2024-05-01T10:00:00+00:00"),
+            ],
         ),
         "db-prod": _FakeContainer(
             name="db-prod",
@@ -293,6 +318,58 @@ class MockLXDClient:
     async def get_container_state(self, name: str) -> _FakeState:
         await self.get_container(name)
         return _FakeState()
+
+    # ------------------------------------------------------------------
+    # Snapshots
+    # ------------------------------------------------------------------
+
+    async def list_snapshots(self, container_name: str) -> list[_FakeSnapshot]:
+        container = await self.get_container(container_name)
+        return list(container.snapshots)
+
+    async def create_snapshot(
+        self,
+        container_name: str,
+        snapshot_name: str,
+        stateful: bool = False,
+        expires_at: str | None = None,
+        wait: bool = True,
+    ) -> _FakeSnapshot:
+        container = await self.get_container(container_name)
+        if any(s.name == snapshot_name for s in container.snapshots):
+            from services.lxd_client import LXDClientError
+
+            raise LXDClientError(f"Snapshot '{container_name}/{snapshot_name}' already exists")
+
+        snapshot = _FakeSnapshot(name=snapshot_name, expires_at=expires_at, stateful=stateful)
+        container.snapshots.append(snapshot)
+        logger.info("mock.snapshot_created", container=container_name, name=snapshot_name)
+        return snapshot
+
+    async def delete_snapshot(
+        self, container_name: str, snapshot_name: str, wait: bool = True
+    ) -> None:
+        container = await self.get_container(container_name)
+        for index, snapshot in enumerate(container.snapshots):
+            if snapshot.name == snapshot_name:
+                del container.snapshots[index]
+                logger.info("mock.snapshot_deleted", container=container_name, name=snapshot_name)
+                return
+
+        from services.lxd_client import LXDClientError
+
+        raise LXDClientError(f"Snapshot '{container_name}/{snapshot_name}' not found")
+
+    async def restore_snapshot(
+        self, container_name: str, snapshot_name: str, wait: bool = True
+    ) -> None:
+        container = await self.get_container(container_name)
+        if not any(s.name == snapshot_name for s in container.snapshots):
+            from services.lxd_client import LXDClientError
+
+            raise LXDClientError(f"Snapshot '{container_name}/{snapshot_name}' not found")
+
+        logger.info("mock.snapshot_restored", container=container_name, name=snapshot_name)
 
     # ------------------------------------------------------------------
     # Images

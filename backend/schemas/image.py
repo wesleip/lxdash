@@ -12,7 +12,10 @@ from pydantic import BaseModel, Field
 class ImageImport(BaseModel):
     """Import an image from a remote simplestreams or LXD server."""
 
-    host_id: int = Field(..., description="Target LXD host ID")
+    # The host is selected via the `host_id` query parameter; the body field is
+    # accepted for backwards compatibility but ignored, so it must not be
+    # required.
+    host_id: int | None = Field(default=None, description="Deprecated: use ?host_id= instead")
     server: str = Field(
         default="https://images.linuxcontainers.org",
         description="URL of the remote image server",

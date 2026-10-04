@@ -60,9 +60,12 @@ def test_decode_token_rejects_tampered_signature():
     from services.auth_service import create_access_token, decode_token
 
     token = create_access_token("alice")
-    # Flip the last char of the signature segment
+    # Flip the last char of the signature segment. Picking a replacement that
+    # differs from the current char keeps the test deterministic — hardcoding
+    # "A" made it fail whenever the signature already ended with it.
     head, mid, sig = token.split(".")
-    tampered = f"{head}.{mid}.{sig[:-1]}A" if sig else token
+    replacement = "B" if sig.endswith("A") else "A"
+    tampered = f"{head}.{mid}.{sig[:-1]}{replacement}" if sig else token
     with pytest.raises(JWTError):
         decode_token(tampered)
 
