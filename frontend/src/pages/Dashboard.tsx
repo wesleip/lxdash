@@ -88,21 +88,23 @@ export default function Dashboard() {
     queryKey: ['host-health', hostId],
     queryFn: ({ signal }) => hosts.health(hostId!, signal),
     enabled: hostId !== null,
-    refetchInterval: 10000,
+    // Back off to once a minute on failure so a permanently-unreachable
+    // host does not spam the access log every 10s.
+    refetchInterval: (q) => (q.state.status === 'error' ? 60_000 : 10_000),
   })
 
   const { data: containerList, isLoading: containersLoading } = useQuery({
     queryKey: ['containers', hostId],
     queryFn: ({ signal }) => containers.list(hostId, signal),
     enabled: hostId !== null,
-    refetchInterval: 10000,
+    refetchInterval: (q) => (q.state.status === 'error' ? 60_000 : 10_000),
   })
 
   const { data: storagePools, isLoading: storageLoading } = useQuery({
     queryKey: ['storage', hostId],
     queryFn: ({ signal }) => storage.list(hostId, signal),
     enabled: hostId !== null,
-    refetchInterval: 30000,
+    refetchInterval: (q) => (q.state.status === 'error' ? 60_000 : 30_000),
   })
 
   const isLoading = healthLoading || containersLoading || storageLoading

@@ -38,31 +38,30 @@ export default function Terminal() {
 
       ws.onopen = () => {
         term.writeln('\x1b[32mConnected.\x1b[0m\r\n')
-        // Send initial terminal size
         const dims = fitAddon.proposeDimensions()
         if (dims) {
-          ws.send(
-            JSON.stringify({
-              type: 'resize',
-              cols: dims.cols,
-              rows: dims.rows,
-            }),
-          )
+          // Resize is a small JSON frame; keystrokes go as raw bytes for
+          // zero overhead per character.
+          ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
+        } else {
+          // The container may not have been laid out yet when the WS
+          // opens; send a placeholder resize after a tick so the backend
+          // has *something* to apply (defaults are 80x24 otherwise).
+          setTimeout(() => {
+            const d = fitAddon.proposeDimensions()
+            if (d) {
+              ws.send(JSON.stringify({ type: 'resize', cols: d.cols, rows: d.rows }))
+            }
+          }, 50)
         }
       }
 
       ws.onmessage = (event) => {
+        // The backend forwards container stdout/stderr as raw binary
+        // frames; treat both shapes the same way — write to xterm.js.
         if (typeof event.data === 'string') {
-          try {
-            const msg = JSON.parse(event.data) as { type: string; data?: string }
-            if (msg.type === 'stdout' && msg.data) {
-              term.write(atob(msg.data))
-            }
-          } catch {
-            term.write(event.data)
-          }
+          term.write(event.data)
         } else {
-          // Binary frame: raw terminal output
           term.write(new Uint8Array(event.data as ArrayBuffer))
         }
       }
@@ -77,10 +76,10 @@ export default function Terminal() {
         term.writeln('\r\n\x1b[31mWebSocket error. Check that the container is running.\x1b[0m')
       }
 
-      // Forward keyboard input to WS
+      // Forward keystrokes to the container as raw bytes.
       term.onData((data) => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'stdin', data: btoa(data) }))
+          ws.send(new TextEncoder().encode(data))
         }
       })
 
@@ -130,7 +129,18 @@ export default function Terminal() {
     term.loadAddon(fitAddon)
     term.loadAddon(webLinksAddon)
     term.open(containerRef.current)
-    fitAddon.fit()
+    // The container may not have its final layout yet on first paint
+    // (the ``dimensions`` property only resolves after a layout pass).
+    // Defer the first fit to the next animation frame so we have a real
+    // viewport, and tolerate the proposal coming back null on the very
+    // first render of a hidden panel.
+    requestAnimationFrame(() => {
+      try {
+        fitAddon.fit()
+      } catch (err) {
+        console.warn("terminal.fit.fit failed", err)
+      }
+    })
 
     xtermRef.current = term
     fitAddonRef.current = fitAddon
