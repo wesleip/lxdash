@@ -6,7 +6,10 @@ Activated when LXD_MOCK=true in the environment.  Maintains state across
 requests within the same process lifetime so start/stop/delete feel real.
 """
 
+import asyncio
+import contextlib
 import hashlib
+import os
 import random
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -180,6 +183,17 @@ def _seed_containers() -> dict[str, _FakeContainer]:
                 "image.version": "20260401",
             },
         ),
+        "ubuntu": _FakeContainer(
+            name="ubuntu",
+            status="Running",
+            status_code=103,
+            expanded_config={
+                "image.architecture": "x86_64",
+                "image.description": "Ubuntu 24.04 LTS (Noble Numbat)",
+                "image.os": "Ubuntu",
+                "image.release": "noble",
+            },
+        ),
         "web-prod": _FakeContainer(
             name="web-prod",
             status="Running",
@@ -300,6 +314,89 @@ def _seed_storage() -> dict[str, _FakeStoragePool]:
 
 
 # ---------------------------------------------------------------------------
+# Mock console session — a real /bin/sh impersonating the container
+# ---------------------------------------------------------------------------
+
+
+class _MockConsoleSession:
+    """Console session that backs a fake LXD container with a real shell.
+
+    Implements the subset of :class:`InteractiveConsoleSession` that the
+    console router actually calls (``send_stdin``, ``recv_data``,
+    ``send_resize``, ``aclose``). We deliberately do not subclass the real
+    one because that would pull ``websockets`` into the mock path, and the
+    mock only needs the contract, not the transport.
+    """
+
+    def __init__(self, container_name: str, process: asyncio.subprocess.Process) -> None:
+        self._container_name = container_name
+        self._process = process
+        self._closed = False
+
+    async def send_stdin(self, data: bytes) -> None:
+        if self._closed:
+            from services.lxd_client import LXDClientError
+
+            raise LXDClientError("Mock console session is closed")
+        if self._process.stdin is None:
+            return
+        self._process.stdin.write(data)
+        await self._process.stdin.drain()
+
+    async def recv_data(self) -> bytes | None:
+        """Return the next chunk of shell output, or ``None`` on EOF.
+
+        A short timeout is used so an idle shell does not stall the
+        bridge; on timeout we return ``b""`` (a legitimate zero-length
+        chunk) so the caller can loop again without misinterpreting it as
+        EOF. Only an actual EOF (``read`` returns ``b""`` without timing
+        out) signals the shell exited.
+        """
+        if self._closed or self._process.stdout is None:
+            return None
+        try:
+            chunk = await asyncio.wait_for(self._process.stdout.read(4096), timeout=0.5)
+        except TimeoutError:
+            return b""
+        if chunk == b"":
+            await self.aclose()
+            return None
+        return chunk
+        return chunk
+
+    async def send_resize(self, cols: int, rows: int) -> None:
+        # No real PTY in the mock — ignore. Real LXD reports the new
+        # window size to the kernel via TIOCSWINSZ so apps that depend on
+        # it (top, less, vim) redraw correctly.
+        return
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        # Interactive ``sh -i`` catches SIGTERM and tries to keep the session
+        # alive, so we escalate to SIGKILL immediately. Once the process is
+        # dead, drain stdin so the asyncio loop does not warn about unclosed
+        # transports when the subprocess object is GC'd.
+        with contextlib.suppress(ProcessLookupError):
+            self._process.kill()
+        with contextlib.suppress(ProcessLookupError):
+            await self._process.wait()
+        if self._process.stdin is not None:
+            with contextlib.suppress(Exception):
+                self._process.stdin.close()
+        if self._process.stdout is not None:
+            with contextlib.suppress(Exception):
+                self._process.stdout.feed_eof()
+
+    async def __aenter__(self) -> _MockConsoleSession:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        await self.aclose()
+
+
+# ---------------------------------------------------------------------------
 # MockLXDClient
 # ---------------------------------------------------------------------------
 
@@ -398,6 +495,44 @@ class MockLXDClient:
     async def get_container_state(self, name: str) -> _FakeState:
         await self.get_container(name)
         return _FakeState()
+
+    async def open_interactive_exec(
+        self,
+        container_name: str,
+        command: list[str],
+        environment: dict[str, Any] | None = None,
+    ) -> _MockConsoleSession:
+        """Spawn a real shell that impersonates the container.
+
+        Using a real ``/bin/sh -i`` keeps the dev experience honest: the
+        operator can type ``ls``, ``cat``, etc. and watch the output scroll.
+        The shell carries a ``mock@<container>:$`` prompt so it's obvious
+        which "container" the terminal is attached to.
+        """
+        await self.get_container(container_name)
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", "/root"),
+            "TERM": "xterm-256color",
+            "PS1": f"mock@{container_name}:$ ",
+            **(environment or {}),
+        }
+        # Drop the user's PS1 override; we want a stable prompt.
+        env["PS1"] = f"mock@{container_name}:$ "
+        try:
+            process = await asyncio.subprocess.create_subprocess_exec(
+                "/bin/sh",
+                "-i",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env,
+            )
+        except FileNotFoundError as exc:
+            from services.lxd_client import LXDClientError
+
+            raise LXDClientError(f"Cannot spawn mock shell for '{container_name}': {exc}") from exc
+        return _MockConsoleSession(container_name, process)
 
     # ------------------------------------------------------------------
     # Snapshots

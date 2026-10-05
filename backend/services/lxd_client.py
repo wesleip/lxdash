@@ -10,13 +10,16 @@ IMPORTANT RULES (enforced here, nowhere else):
 """
 
 import asyncio
+import contextlib
+import json
 import os
 import tempfile
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 import pylxd  # type: ignore[import]
 import structlog
+import websockets  # type: ignore[import]
 
 logger = structlog.get_logger(__name__)
 
@@ -40,6 +43,104 @@ def _snapshot_to_dict(meta: dict[str, Any]) -> dict[str, Any]:
 
 class LXDClientError(Exception):
     """Raised when a pylxd operation fails in a known way."""
+
+
+class InteractiveConsoleSession:
+    """Bidirectional bridge to a running container's PTY.
+
+    Wraps the two WebSockets LXD returns from
+    ``POST /1.0/instances/{name}/exec`` with
+    ``wait-for-websocket=true, interactive=true``:
+
+    - ``data`` WebSocket: carries the container's stdin/stdout/stderr as
+      binary frames. We write the browser's keystrokes here and read
+      container output back from it.
+    - ``control`` WebSocket: control-plane JSON messages. We send
+      ``window-resize`` here when the browser resizes its xterm.js viewport.
+
+    The LXD-side exec operation is reaped automatically once both
+    WebSockets close; ``aclose()`` is idempotent and is the safe way to
+    tear the session down from a ``finally`` block.
+    """
+
+    def __init__(self, data_ws: Any, control_ws: Any) -> None:
+        self._data = data_ws
+        self._control = control_ws
+        self._closed = False
+
+    async def send_stdin(self, data: bytes) -> None:
+        """Forward keystrokes from the browser to the container's stdin."""
+        if self._closed:
+            raise LXDClientError("Console session is closed")
+        await self._data.send(data)
+
+    async def send_resize(self, cols: int, rows: int) -> None:
+        """Ask LXD to update the container's TTY window size.
+
+        Silently ignored after the session is closed — late resize events
+        from a closing xterm.js viewport should not crash the WS handler.
+        """
+        if self._closed:
+            return
+        payload = json.dumps({"command": "window-resize", "args": {"width": cols, "height": rows}})
+        await self._control.send(payload.encode("utf-8"))
+
+    async def recv_data(self) -> bytes:
+        """Return the next chunk of container stdout/stderr.
+
+        LXD ships binary frames; if a string ever leaks through (control
+        notification misrouted onto the data socket, etc.) we encode it so
+        the caller can still write it to xterm.js without crashing.
+        """
+        msg = await self._data.recv()
+        if isinstance(msg, str):
+            return msg.encode("utf-8", errors="replace")
+        return bytes(msg)
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        # Both websockets are best-effort closed; a failure on one must not
+        # leak the other.
+        for ws in (self._data, self._control):
+            with contextlib.suppress(Exception):
+                await ws.close()
+
+    async def __aenter__(self) -> InteractiveConsoleSession:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        await self.aclose()
+
+
+async def _open_lxd_websocket(full_uri: str) -> Any:
+    """Open one of the WebSockets LXD returned from an interactive exec.
+
+    Bridges the transport gap: ``pylxd`` hands back paths like
+    ``ws+unix:///var/snap/lxd/common/lxd/unix.socket/1.0/operations/<uuid>/websocket?secret=…``
+    (Unix) or ``wss://host:port/1.0/operations/<uuid>/websocket?secret=…`` (HTTPS).
+    The ``websockets`` library's :func:`unix_connect` handles the Unix variant
+    by accepting an explicit socket path; for HTTPS the regular ``connect``
+    works directly.
+
+    ``max_size=None`` matches LXD's behaviour (raw terminal bytes are not
+    capped at the default 1 MiB message limit).
+    """
+    parsed = urlparse(full_uri)
+    if parsed.scheme == "ws+unix":
+        socket_path = unquote(parsed.path.lstrip("/").split("/", 1)[0])
+        # ws_resource is everything after the socket path; the host part of
+        # the URI is irrelevant over a Unix socket, so we use a placeholder.
+        ws_resource = "/" + parsed.path.lstrip("/").split("/", 1)[1]
+        if parsed.query:
+            ws_resource = f"{ws_resource}?{parsed.query}"
+        return await websockets.unix_connect(
+            path=f"/{socket_path}",
+            uri=f"ws://lxd{ws_resource}",
+            max_size=None,
+        )
+    return await websockets.connect(full_uri, max_size=None)
 
 
 class LXDClient:
@@ -127,6 +228,59 @@ class LXDClient:
 
         logger.info("lxd.connected", mode="tls", endpoint=endpoint)
         return cls(raw, host_id=host_id)
+
+    # ------------------------------------------------------------------
+    # Interactive console
+    # ------------------------------------------------------------------
+
+    async def open_interactive_exec(
+        self,
+        container_name: str,
+        command: list[str],
+        environment: dict[str, Any] | None = None,
+    ) -> InteractiveConsoleSession:
+        """Open an interactive PTY session for *container_name*.
+
+        Asks LXD to run *command* with ``interactive=true`` and
+        ``wait-for-websocket=true`` via ``pylxd.Container.raw_interactive_execute``,
+        then opens the two WebSockets it returns (one for stdin/stdout/stderr,
+        one for control-plane messages such as ``window-resize``) and wraps
+        them in an :class:`InteractiveConsoleSession`.
+
+        Caller is responsible for ``aclose()`` (or ``async with``); the LXD-side
+        exec operation is reaped by LXD itself once both WebSockets close.
+
+        Raises:
+            LXDClientError: the container is missing, not running, or LXD
+                rejected the exec request.
+        """
+        env = dict(environment or {})
+
+        def _start() -> tuple[str, str]:
+            container = self._client.containers.get(container_name)
+            urls = container.raw_interactive_execute(command, env)
+            base = self._client.websocket_url  # ws+unix://… or wss://…
+            # raw_interactive_execute returns paths like
+            # ``/1.0/operations/<uuid>/websocket?secret=…``; prepend the
+            # transport base (scheme + host) to get the full URL.
+            return (base + urls["ws"], base + urls["control"])
+
+        try:
+            data_uri, control_uri = await asyncio.to_thread(_start)
+        except pylxd.exceptions.LXDAPIException as exc:
+            raise LXDClientError(f"Cannot open console for '{container_name}': {exc}") from exc
+
+        try:
+            data_ws, control_ws = await asyncio.gather(
+                _open_lxd_websocket(data_uri),
+                _open_lxd_websocket(control_uri),
+            )
+        except (OSError, websockets.exceptions.WebSocketException) as exc:
+            raise LXDClientError(
+                f"Cannot connect to console for '{container_name}': {exc}"
+            ) from exc
+
+        return InteractiveConsoleSession(data_ws, control_ws)
 
     # ------------------------------------------------------------------
     # Containers
