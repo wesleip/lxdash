@@ -66,19 +66,52 @@ def _auth_token_for(client, username: str = "admin", password: str = "admin") ->
     return resp.json()["access_token"]
 
 
+def _await_close_code(ws) -> int:
+    """Drain frames until a close frame arrives; return its code.
+
+    Starlette's TestClient surfaces an immediate close either as a
+    ``WebSocketDisconnect`` raised on the next call (when the server
+    closed *before* the test client sent anything) or as a
+    ``{"type": "websocket.close", …}`` message (when the close frame
+    arrives after the handshake completed). This helper accepts either.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
+    while True:
+        try:
+            frame = ws.receive()
+        except WebSocketDisconnect as exc:
+            return exc.code
+        if frame.get("type") == "websocket.close":
+            return int(frame.get("code", 1000))
+
+
 def test_console_ws_closes_with_1008_when_token_missing(client, db_session):
     """Browsers cannot send Authorization on a WS, but a malicious caller
     still has to know the JWT. Without ``?token=...`` the upgrade must be
-    refused with the policy-violation close code."""
+    rejected with the policy-violation close code (1008).
+
+    Calling ``websocket.close()`` *before* ``websocket.accept()`` is a no-op
+    in Starlette — the framework then answers the WS handshake with
+    ``HTTP 403`` instead. The router now accepts first, then closes, so
+    the close code survives.
+
+    Note: a missing token is caught by the ``Query(..., token)`` validator
+    before our handler runs, so the close frame can arrive *before* the
+    handshake completes — Starlette surfaces that as ``WebSocketDisconnect``
+    raised directly out of ``websocket_connect.__enter__``.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
     _seed_admin(db_session)
     _make_host(db_session)
 
-    with pytest.raises(Exception) as exc_info:
-        with client.websocket_connect("/ws/containers/archlinux/console"):
-            pass
-    assert (
-        "1008" in str(exc_info.value) or exc_info.value.__class__.__name__ == "WebSocketDisconnect"
-    )
+    try:
+        with client.websocket_connect("/ws/containers/archlinux/console") as ws:
+            code = _await_close_code(ws)
+    except WebSocketDisconnect as exc:
+        code = exc.code
+    assert code == 1008
 
 
 def test_console_ws_closes_with_1008_on_unknown_container(client, db_session):
@@ -88,12 +121,9 @@ def test_console_ws_closes_with_1008_on_unknown_container(client, db_session):
     _make_host(db_session)
     token = _auth_token_for(client)
 
-    with pytest.raises(Exception) as exc_info:
-        with client.websocket_connect(f"/ws/containers/no-such-container/console?token={token}"):
-            pass
-    assert (
-        "1008" in str(exc_info.value) or exc_info.value.__class__.__name__ == "WebSocketDisconnect"
-    )
+    with client.websocket_connect(f"/ws/containers/no-such-container/console?token={token}") as ws:
+        code = _await_close_code(ws)
+    assert code == 1008
 
 
 def test_console_ws_closes_with_1008_when_no_host_registered(client, db_session):
@@ -103,12 +133,9 @@ def test_console_ws_closes_with_1008_when_no_host_registered(client, db_session)
     _seed_admin(db_session)
     token = _auth_token_for(client)
 
-    with pytest.raises(Exception) as exc_info:
-        with client.websocket_connect(f"/ws/containers/anything/console?token={token}"):
-            pass
-    assert (
-        "1008" in str(exc_info.value) or exc_info.value.__class__.__name__ == "WebSocketDisconnect"
-    )
+    with client.websocket_connect(f"/ws/containers/anything/console?token={token}") as ws:
+        code = _await_close_code(ws)
+    assert code == 1008
 
 
 def test_console_ws_bridges_stdin_and_stdout_via_mock(client, db_session):

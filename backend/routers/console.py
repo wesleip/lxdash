@@ -83,26 +83,38 @@ async def container_console(
     ``host_id`` is optional: with a single registered host it is inferred, the
     same way the REST routes do.
 
-    The connection is closed with code 1008 on auth failure.
+    On every error path (bad token, missing host, LXD unreachable, exec
+    refused) the connection is **accepted first** and then closed with code
+    1008. Calling ``websocket.close()`` before ``websocket.accept()`` is a
+    no-op in Starlette — the framework then answers the WS handshake with
+    ``HTTP 403`` and the browser reports ``Error during WebSocket
+    handshake: Unexpected response code: 403`` instead of a clean 1008
+    close.
     """
     user = await _authenticate_ws(token, db)
 
-    if user is None:
+    async def _reject(reason: str) -> None:
+        """Accept the WS so the close frame is delivered with 1008."""
+        await websocket.accept()
         await websocket.close(code=_CLOSE_POLICY_VIOLATION)
+        logger.info("console.rejected", container=name, reason=reason)
+
+    if user is None:
+        await _reject("auth_failed")
         return
 
     try:
         host = resolve_host(db, host_id)
     except HostRegistryError as exc:
         logger.warning("console.host_unresolved", host_id=host_id, error=str(exc))
-        await websocket.close(code=_CLOSE_POLICY_VIOLATION)
+        await _reject("host_unresolved")
         return
 
     try:
         lxd = await open_client(host)
     except LXDClientError as exc:
         logger.warning("console.connect_failed", host_id=host.id, error=str(exc))
-        await websocket.close(code=_CLOSE_POLICY_VIOLATION)
+        await _reject("connect_failed")
         return
 
     try:
@@ -117,7 +129,7 @@ async def container_console(
         )
     except LXDClientError as exc:
         logger.warning("console.open_failed", container=name, host_id=host.id, error=str(exc))
-        await websocket.close(code=_CLOSE_POLICY_VIOLATION)
+        await _reject("open_failed")
         return
 
     async def pump_to_container() -> None:
@@ -164,15 +176,15 @@ async def container_console(
                 return
             await websocket.send_bytes(chunk)
 
-    async with session:
-        await websocket.accept()
-        logger.info(
-            "console.opened",
-            container=name,
-            host_id=host.id,
-            user=user.username,
-        )
+    await websocket.accept()
+    logger.info(
+        "console.opened",
+        container=name,
+        host_id=host.id,
+        user=user.username,
+    )
 
+    async with session:
         # Push the initial window size so apps like vim fill the
         # terminal correctly on the very first paint.
         await session.send_resize(width, height)
