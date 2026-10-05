@@ -114,29 +114,33 @@ class InteractiveConsoleSession:
         await self.aclose()
 
 
-async def _open_lxd_websocket(full_uri: str) -> Any:
+async def _open_lxd_websocket(socket_path: str, full_uri: str) -> Any:
     """Open one of the WebSockets LXD returned from an interactive exec.
 
-    Bridges the transport gap: ``pylxd`` hands back paths like
-    ``ws+unix:///var/snap/lxd/common/lxd/unix.socket/1.0/operations/<uuid>/websocket?secret=…``
-    (Unix) or ``wss://host:port/1.0/operations/<uuid>/websocket?secret=…`` (HTTPS).
-    The ``websockets`` library's :func:`unix_connect` handles the Unix variant
-    by accepting an explicit socket path; for HTTPS the regular ``connect``
-    works directly.
+    Bridges the transport gap. ``pylxd`` hands back paths like
+    ``ws+unix://<socket_path>/1.0/operations/<uuid>/websocket?secret=…``
+    (Unix) or ``wss://host:port/1.0/operations/<uuid>/websocket?secret=…``
+    (HTTPS). The ``websockets`` library's :func:`unix_connect` handles the
+    Unix variant by accepting an explicit socket path; for HTTPS the
+    regular :func:`connect` works directly.
+
+    The caller passes the absolute socket path explicitly because the URI
+    alone is ambiguous: a Unix socket path can itself contain ``/``, so
+    splitting the URI on ``/`` cannot reliably locate the boundary
+    between socket path and operation path. ``pylxd.Client.websocket_url``
+    already gives us the socket path — we reuse it.
 
     ``max_size=None`` matches LXD's behaviour (raw terminal bytes are not
     capped at the default 1 MiB message limit).
     """
     parsed = urlparse(full_uri)
     if parsed.scheme == "ws+unix":
-        socket_path = unquote(parsed.path.lstrip("/").split("/", 1)[0])
-        # ws_resource is everything after the socket path; the host part of
-        # the URI is irrelevant over a Unix socket, so we use a placeholder.
-        ws_resource = "/" + parsed.path.lstrip("/").split("/", 1)[1]
-        if parsed.query:
-            ws_resource = f"{ws_resource}?{parsed.query}"
+        # Strip the leading ``/`` from the socket path so ``websockets``
+        # accepts it; the WS resource path is the URI component after
+        # the socket path (already starts with ``/``).
+        ws_resource = full_uri.split(socket_path, 1)[1]
         return await websockets.unix_connect(
-            path=f"/{socket_path}",
+            path=socket_path,
             uri=f"ws://lxd{ws_resource}",
             max_size=None,
         )
@@ -158,6 +162,29 @@ class LXDClient:
 
     # ------------------------------------------------------------------
     # Factory methods
+    # ------------------------------------------------------------------
+    # Transport introspection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _socket_path_from_base(base: str) -> str:
+        """Extract the absolute Unix socket path from a ``ws+unix://…`` URL.
+
+        ``pylxd.Client.websocket_url`` returns either ``wss://host:port``
+        (HTTPS) or ``ws+unix://<socket_path>`` (Unix). For the Unix variant
+        we need the *absolute* socket path to hand to
+        :func:`websockets.unix_connect`. ``urlparse`` puts it into
+        ``parsed.path`` (the netloc is empty for non-``http(s)`` schemes).
+        """
+        parsed = urlparse(base)
+        if parsed.scheme != "ws+unix":
+            raise LXDClientError(f"Cannot extract socket path from non-Unix URL: {base}")
+        # ``urlparse`` keeps the leading ``/`` in ``parsed.path``; the
+        # websocket library accepts either with ``path=`` so we normalise
+        # to the form ``/<socket>``.
+        path = unquote(parsed.path)
+        return path if path.startswith("/") else f"/{path}"
+
     # ------------------------------------------------------------------
 
     @classmethod
@@ -256,24 +283,33 @@ class LXDClient:
         """
         env = dict(environment or {})
 
-        def _start() -> tuple[str, str]:
+        def _start() -> tuple[tuple[str, str], str]:
             container = self._client.containers.get(container_name)
             urls = container.raw_interactive_execute(command, env)
             base = self._client.websocket_url  # ws+unix://… or wss://…
             # raw_interactive_execute returns paths like
             # ``/1.0/operations/<uuid>/websocket?secret=…``; prepend the
             # transport base (scheme + host) to get the full URL.
-            return (base + urls["ws"], base + urls["control"])
+            return (
+                (base + urls["ws"], base + urls["control"]),
+                base,
+            )
 
         try:
-            data_uri, control_uri = await asyncio.to_thread(_start)
+            (data_uri, control_uri), base = await asyncio.to_thread(_start)
         except pylxd.exceptions.LXDAPIException as exc:
             raise LXDClientError(f"Cannot open console for '{container_name}': {exc}") from exc
 
+        # For the Unix transport we need the absolute socket path separately;
+        # the URI alone is ambiguous because a socket path can itself
+        # contain ``/`` and the ``raw_interactive_execute`` URL only embeds
+        # the operation path. Reconstruct it from ``ws+unix://<path>``.
+        socket_path = self._socket_path_from_base(base)
+
         try:
             data_ws, control_ws = await asyncio.gather(
-                _open_lxd_websocket(data_uri),
-                _open_lxd_websocket(control_uri),
+                _open_lxd_websocket(socket_path, data_uri),
+                _open_lxd_websocket(socket_path, control_uri),
             )
         except (OSError, websockets.exceptions.WebSocketException) as exc:
             raise LXDClientError(
